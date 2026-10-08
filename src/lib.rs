@@ -2,6 +2,7 @@
 //!
 //! 模块随里程碑逐步落地（见 `.temp/PLAN.md`）。
 
+pub mod api;
 pub mod config;
 pub mod error;
 pub mod faye;

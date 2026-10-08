@@ -50,3 +50,6 @@ codegen-units = 1
 panic = "abort"
 # 剥离符号信息，减小产物体积
 strip = true
+
+[dev-dependencies]
+wiremock = "0.6.5"
