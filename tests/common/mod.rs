@@ -38,13 +38,19 @@ pub const COOKIE: &str = "openid=test-openid-value";
 pub const HANDSHAKE_OK: &str = r#"[{"id":"1","channel":"/meta/handshake","successful":true,"clientId":"mock-client-id","version":"1.0","supportedConnectionTypes":["websocket"],"advice":{"reconnect":"retry","interval":0,"timeout":15000}}]"#;
 
 /// 第 2 轮二维码推送（`data.type == 1`）。
+// 共享装置：并非每个测试文件都用得到，故豁免未使用告警。
+#[allow(dead_code)]
 pub const QR_PUSH: &str = r#"[{"channel":"/attendance/100001/200002/qr","data":{"type":1,"qrUrl":"https://example.test/qr/round2"},"clientId":"mock-client-id"}]"#;
 
 /// 签到关闭推送（`data.type == 2`）。
+// 共享装置：并非每个测试文件都用得到，故豁免未使用告警。
+#[allow(dead_code)]
 pub const CLOSED_PUSH: &str =
     r#"[{"channel":"/attendance/100001/200002/qr","data":{"type":2},"clientId":"mock-client-id"}]"#;
 
 /// 前方拥挤推送（`data.type == 3`）。
+// 共享装置：并非每个测试文件都用得到，故豁免未使用告警。
+#[allow(dead_code)]
 pub const CONGESTED_PUSH: &str =
     r#"[{"channel":"/attendance/100001/200002/qr","data":{"type":3},"clientId":"mock-client-id"}]"#;
 
@@ -67,6 +73,8 @@ pub struct TestApp {
 
 impl TestApp {
     /// HTTP 基地址。
+    // 共享装置：并非每个测试文件都用得到，故豁免未使用告警。
+    #[allow(dead_code)]
     #[must_use]
     pub fn base(&self) -> String {
         format!("http://{}", self.addr)
@@ -111,6 +119,8 @@ pub struct MockFaye {
     /// 服务端（mock）收到的客户端帧。
     pub frames: mpsc::Receiver<String>,
     /// 主动推送入口（握手完成后才真正下发）。
+    // 共享装置：并非每个测试文件都用得到，故豁免未使用告警。
+    #[allow(dead_code)]
     pub push: mpsc::Sender<String>,
 }
 
@@ -249,6 +259,8 @@ pub async fn expect_ping(ws: &mut BrowserWs, timeout: Duration) -> TestResult {
 }
 
 /// 发送一条上行文本帧。
+// 共享装置：并非每个测试文件都用得到，故豁免未使用告警。
+#[allow(dead_code)]
 pub async fn send_text(ws: &mut BrowserWs, text: &str) -> TestResult {
     ws.send(WsMessage::text(text)).await?;
     Ok(())
