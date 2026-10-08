@@ -7,12 +7,15 @@ use thiserror::Error;
 /// 变体随里程碑逐步扩展（faye、轮询、HTTP 各层各自细分）。
 #[derive(Debug, Error)]
 pub enum Error {
-    /// 配置无效。
-    ///
-    /// 当前配置解析采用回退语义（见 [`crate::config`]），此变体保留给后续
-    /// 引入强制校验的场景（如监听地址解析失败）。
+    /// 配置无效（如监听地址无法解析）。
     #[error("无效配置: {0}")]
     Config(String),
+    /// 外部依赖初始化失败（如 HTTP 客户端构造）。
+    #[error("初始化失败: {0}")]
+    Init(String),
+    /// I/O 错误（监听绑定、服务运行）。
+    #[error("I/O 错误: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 /// 应用统一结果别名。
