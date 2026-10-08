@@ -1,3 +1,4 @@
-fn main() {
-    println!("Hello, world!");
-}
+//! 微助教签到工具（Rust 重写版）。
+//
+// 项目重写中：框架搭建阶段，功能实现后续从 dev 分支逐步合入。
+fn main() {}

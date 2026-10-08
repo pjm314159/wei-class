@@ -4,3 +4,25 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+
+[lints.rust]
+# 安全底线：禁用 unsafe（forbid 不可被子模块 allow 覆盖）
+unsafe_code = "forbid"
+# 公共 API 必须有文档
+missing_docs = "warn"
+
+[lints.clippy]
+# 严格档：pedantic 全组启用（CI 中经 -D warnings 升级为强制）
+pedantic = { level = "warn", priority = -1 }
+# 以下一律拒绝：可能的 panic 快捷方式
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+# 占位符不允许进入主线
+todo = "deny"
+unimplemented = "deny"
+# 调试残留
+dbg_macro = "deny"
+# 输出统一走日志设施，禁止裸打印
+print_stdout = "deny"
+print_stderr = "deny"
