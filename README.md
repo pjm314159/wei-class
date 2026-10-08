@@ -2,7 +2,6 @@
 
 微助教签到工具（Rust 重写版）。
 
-> 本项目是旧版 Python 实现（保留于本地 `old/` 目录，仅作参考）的彻底重写，旧代码不再维护。
 
 [![CI](https://github.com/pjm314159/wei-class/actions/workflows/ci.yml/badge.svg)](https://github.com/pjm314159/wei-class/actions/workflows/ci.yml)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
