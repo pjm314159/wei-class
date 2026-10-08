@@ -3,13 +3,535 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>微助教签到</title>
+    <title>微助教签到助手</title>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
+    <style>
+      :root {
+        --bg: #f5f6f8;
+        --card: #ffffff;
+        --text: #1f2329;
+        --muted: #6b7280;
+        --line: #e5e7eb;
+        --accent: #2563eb;
+        --ok: #16a34a;
+        --warn: #d97706;
+        --danger: #dc2626;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #14161a;
+          --card: #1c1f24;
+          --text: #e8eaed;
+          --muted: #9ca3af;
+          --line: #2c3138;
+          --accent: #60a5fa;
+          --ok: #4ade80;
+          --warn: #fbbf24;
+          --danger: #f87171;
+        }
+      }
+
+      /* x-cloak：Alpine 初始化后移除该属性，此前隐藏未渲染的模板 */
+      [x-cloak] {
+        display: none;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 24px 16px 48px;
+        background: var(--bg);
+        color: var(--text);
+        font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+        line-height: 1.6;
+      }
+
+      main {
+        max-width: 460px;
+        margin: 0 auto;
+      }
+
+      h1 {
+        margin: 0 0 4px;
+        font-size: 20px;
+      }
+
+      .subtitle {
+        margin: 0 0 20px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 16px;
+      }
+
+      label {
+        display: block;
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+
+      input[type="text"],
+      input[type="number"] {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: transparent;
+        color: var(--text);
+        font-size: 14px;
+      }
+
+      input:focus {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+
+      button {
+        margin-top: 12px;
+        width: 100%;
+        padding: 10px 14px;
+        border: 0;
+        border-radius: 8px;
+        background: var(--accent);
+        color: #fff;
+        font-size: 14px;
+        cursor: pointer;
+      }
+
+      button[disabled] {
+        opacity: 0.6;
+        cursor: default;
+      }
+
+      button.ghost {
+        background: transparent;
+        border: 1px solid var(--line);
+        color: var(--text);
+      }
+
+      .row {
+        display: flex;
+        gap: 8px;
+        align-items: flex-end;
+      }
+
+      .row > div {
+        flex: 1;
+      }
+
+      .row button {
+        width: auto;
+        margin-top: 0;
+        padding: 10px 16px;
+      }
+
+      .status {
+        display: flex;
+        justify-content: space-between;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 6px;
+        background: var(--muted);
+      }
+
+      .dot.live {
+        background: var(--ok);
+      }
+
+      .dot.connecting {
+        background: var(--warn);
+      }
+
+      .dot.down {
+        background: var(--danger);
+      }
+
+      .qr {
+        text-align: center;
+        padding: 8px 0;
+      }
+
+      .qr-box {
+        display: inline-block;
+        min-height: 200px;
+        padding: 12px;
+        background: #fff;
+        border-radius: 8px;
+      }
+
+      .qr-link {
+        display: block;
+        margin-top: 10px;
+        color: var(--accent);
+        font-size: 13px;
+        word-break: break-all;
+      }
+
+      .notice {
+        margin-top: 12px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        font-size: 13px;
+        border: 1px solid var(--line);
+        color: var(--muted);
+      }
+
+      .notice.warn {
+        border-color: var(--warn);
+        color: var(--warn);
+      }
+
+      .notice.danger {
+        border-color: var(--danger);
+        color: var(--danger);
+      }
+
+      .hint {
+        margin: 8px 0 0;
+        font-size: 12px;
+        color: var(--muted);
+      }
+    </style>
   </head>
+
   <body>
-    <main>
-      <h1>微助教签到</h1>
-      <p>前端页面将在 M5 里程碑落地（Alpine.js 单文件静态页）。</p>
-      <p>当前服务端已就绪：<code>POST /api/login</code> 与 <code>WS /ws</code>。</p>
+    <main x-data="app" x-cloak>
+      <p class="notice danger" id="offline-tip" style="display: none">
+        页面脚本加载失败（Alpine.js 来自 CDN），请检查网络可达性或改由自建静态资源提供。
+      </p>
+      <h1>微助教签到助手</h1>
+      <p class="subtitle">openid 仅保存在本机浏览器，服务端不落盘</p>
+
+      <section class="card" x-show="!loggedIn">
+        <label for="openid">openid</label>
+        <input
+          id="openid"
+          type="text"
+          x-model="openidInput"
+          placeholder="粘贴微助教 openid"
+          autocomplete="off"
+          @keydown.enter="login()"
+        />
+        <button @click="login()" x-text="loggingIn ? '登录中…' : '登录'" :disabled="loggingIn"></button>
+        <p class="notice danger" x-show="loginError" x-text="loginError"></p>
+        <p class="hint">登录时服务端会校验一次 openid，通过后签发 2 小时有效的 cookie。</p>
+      </section>
+
+      <section class="card" x-show="loggedIn">
+        <div class="status">
+          <span>
+            <i class="dot" :class="dotClass"></i>
+            <span x-text="statusText"></span>
+          </span>
+          <span x-text="limitText"></span>
+        </div>
+
+        <div class="qr">
+          <template x-if="qr">
+            <div>
+              <strong>扫描下方二维码签到</strong>
+              <div class="qr-box" x-ref="qrbox"></div>
+              <a class="qr-link" :href="qr.url" target="_blank" rel="noopener" x-text="qr.url"></a>
+              <p class="hint" x-text="'更新于 ' + qr.at"></p>
+            </div>
+          </template>
+          <template x-if="!qr">
+            <p class="hint" x-text="waitingText"></p>
+          </template>
+          <p class="notice" :class="noticeClass" x-show="notice" x-text="notice"></p>
+        </div>
+      </section>
+
+      <section class="card" x-show="loggedIn">
+        <div class="row">
+          <div>
+            <label for="interval">轮询间隔（秒）</label>
+            <input id="interval" type="number" min="1" step="1" x-model.number="intervalInput" />
+          </div>
+          <button @click="applyInterval()">保存</button>
+        </div>
+        <p class="notice" x-show="intervalHint" x-text="intervalHint"></p>
+        <p class="hint">
+          间隔保存在本机（localStorage），每次改动即时生效；低于服务端下限的值会被自动上调。
+        </p>
+        <button class="ghost" @click="logout()">退出并清除 openid</button>
+      </section>
     </main>
+
+    <script>
+      document.addEventListener("alpine:init", () => {
+        Alpine.data("app", () => ({
+          openidInput: "",
+          loggedIn: false,
+          loggingIn: false,
+          loginError: "",
+          connection: "idle",
+          minIntervalMs: 0,
+          intervalInput: 5,
+          requestedSeconds: 5,
+          intervalHint: "",
+          qr: null,
+          notice: "",
+          noticeClass: "",
+          socket: null,
+          retryTimer: null,
+          expired: false,
+
+          init() {
+            const saved = Number(localStorage.getItem("wei-class:poll-interval"));
+            if (Number.isFinite(saved) && saved >= 1) {
+              this.intervalInput = Math.floor(saved);
+            }
+            if (readCookie("openid")) {
+              this.loggedIn = true;
+              this.connect();
+            }
+          },
+
+          get dotClass() {
+            if (this.connection === "live") return "live";
+            if (this.connection === "connecting") return "connecting";
+            return "down";
+          },
+
+          get statusText() {
+            if (this.connection === "live") return "已连接";
+            if (this.connection === "connecting") return "连接中…";
+            return "连接已断开，正在重试";
+          },
+
+          get limitText() {
+            if (this.minIntervalMs <= 0) return "";
+            return `服务端下限 ${this.minIntervalMs / 1000} 秒`;
+          },
+
+          get waitingText() {
+            if (this.connection === "live") return "等待教师开启二维码签到…";
+            return "连接恢复后将自动继续监听";
+          },
+
+          async login() {
+            if (this.loggingIn) return;
+            const openid = String(this.openidInput || "").trim();
+            if (!openid) {
+              this.loginError = "请填写 openid";
+              return;
+            }
+            this.loggingIn = true;
+            this.loginError = "";
+            try {
+              const response = await fetch("/api/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ openid }),
+              });
+              const body = await response.json().catch(() => ({}));
+              if (!response.ok || !body.ok) {
+                this.loginError = reasonText(body.reason);
+                return;
+              }
+              this.loggedIn = true;
+              this.expired = false;
+              this.connect();
+            } catch {
+              this.loginError = "网络错误，请稍后重试";
+            } finally {
+              this.loggingIn = false;
+            }
+          },
+
+          connect() {
+            this.closeSocket();
+            this.connection = "connecting";
+            const scheme = location.protocol === "https:" ? "wss:" : "ws:";
+            const socket = new WebSocket(`${scheme}//${location.host}/ws`);
+            this.socket = socket;
+
+            socket.addEventListener("open", () => {
+              this.connection = "live";
+              this.send({ type: "interval", seconds: Math.max(1, Math.floor(this.intervalInput)) });
+            });
+            socket.addEventListener("message", (event) => {
+              const message = parseMessage(event.data);
+              if (message) this.handle(message);
+            });
+            socket.addEventListener("close", () => {
+              this.connection = "down";
+              this.qr = null;
+              if (this.loggedIn && !this.expired && !this.retryTimer) {
+                this.retryTimer = setTimeout(() => {
+                  this.retryTimer = null;
+                  this.connect();
+                }, 3000);
+              }
+            });
+          },
+
+          handle(message) {
+            switch (message.type) {
+              case "status":
+                this.applyStatus(message.intervalMs, message.minIntervalMs);
+                break;
+              case "qr":
+                if (!isSafeUrl(message.url)) break;
+                this.qr = { url: message.url, at: new Date().toLocaleTimeString() };
+                this.notice = "";
+                this.noticeClass = "";
+                this.$nextTick(() => this.renderQr());
+                break;
+              case "closed":
+                this.qr = null;
+                this.notice = "本轮签到已关闭，等待下一次开启";
+                this.noticeClass = "";
+                break;
+              case "congested":
+                this.notice = "前方拥挤，请稍候重试";
+                this.noticeClass = "warn";
+                break;
+              case "sessionExpired":
+                this.onExpired();
+                break;
+              default:
+                break;
+            }
+          },
+
+          applyStatus(intervalMs, minIntervalMs) {
+            this.minIntervalMs = minIntervalMs;
+            const effective = Math.round(intervalMs / 1000);
+            const min = Math.ceil(minIntervalMs / 1000);
+            if (this.requestedSeconds > 0 && effective > this.requestedSeconds) {
+              this.intervalHint = `上报值低于服务端下限，已按 ${effective} 秒生效`;
+            } else {
+              this.intervalHint = "";
+            }
+            this.intervalInput = effective;
+            localStorage.setItem("wei-class:poll-interval", String(effective));
+            this.requestedSeconds = Math.max(effective, min);
+          },
+
+          applyInterval() {
+            const seconds = Math.max(1, Math.floor(Number(this.intervalInput) || 1));
+            this.intervalInput = seconds;
+            this.requestedSeconds = seconds;
+            localStorage.setItem("wei-class:poll-interval", String(seconds));
+            this.send({ type: "interval", seconds });
+          },
+
+          send(message) {
+            if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+              this.socket.send(JSON.stringify(message));
+            }
+          },
+
+          renderQr() {
+            const box = this.$refs.qrbox;
+            if (!box || !this.qr) return;
+            box.textContent = "";
+            if (typeof QRCode !== "function") return;
+            new QRCode(box, {
+              text: this.qr.url,
+              width: 200,
+              height: 200,
+              correctLevel: QRCode.CorrectLevel.M,
+            });
+          },
+
+          onExpired() {
+            this.expired = true;
+            this.qr = null;
+            this.notice = "登录已失效，请重新输入 openid";
+            this.noticeClass = "danger";
+            clearCookie("openid");
+            this.loggedIn = false;
+            this.closeSocket();
+          },
+
+          logout() {
+            clearCookie("openid");
+            this.expired = true;
+            this.loggedIn = false;
+            this.qr = null;
+            this.notice = "";
+            this.closeSocket();
+          },
+
+          closeSocket() {
+            if (this.retryTimer) {
+              clearTimeout(this.retryTimer);
+              this.retryTimer = null;
+            }
+            if (this.socket) {
+              this.socket.close();
+              this.socket = null;
+            }
+            this.connection = "idle";
+          },
+        }));
+      });
+
+      function readCookie(name) {
+        const parts = document.cookie ? document.cookie.split(";") : [];
+        for (const part of parts) {
+          const [key, ...rest] = part.trim().split("=");
+          if (key === name) return rest.join("=");
+        }
+        return "";
+      }
+
+      function clearCookie(name) {
+        // biome-ignore lint/suspicious/noDocumentCookie: 需清除服务端签发的非 HttpOnly cookie，Cookie Store API 在目标浏览器覆盖不足
+        document.cookie = `${name}=; Max-Age=0; path=/; SameSite=Lax`;
+      }
+
+      function parseMessage(raw) {
+        try {
+          const message = JSON.parse(raw);
+          return message && typeof message.type === "string" ? message : null;
+        } catch {
+          return null;
+        }
+      }
+
+      function isSafeUrl(url) {
+        return typeof url === "string" && (url.startsWith("https://") || url.startsWith("http://"));
+      }
+
+      // CDN 不可达时 Alpine 不会初始化，x-cloak 会让页面永久空白：解除隐藏并提示。
+      window.addEventListener("load", () => {
+        if (window.Alpine) return;
+        document.querySelectorAll("[x-cloak]").forEach((el) => {
+          el.removeAttribute("x-cloak");
+        });
+        const tip = document.getElementById("offline-tip");
+        if (tip) tip.style.display = "block";
+      });
+
+      function reasonText(reason) {
+        if (reason === "tokenInvalid") return "openid 无效或已过期";
+        if (reason === "network") return "上游服务暂时不可用，请稍后重试";
+        if (reason === "invalidOpenid") return "openid 格式不合法";
+        return "登录失败，请重试";
+      }
+    </script>
   </body>
 </html>
