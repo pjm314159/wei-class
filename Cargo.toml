@@ -52,4 +52,6 @@ panic = "abort"
 strip = true
 
 [dev-dependencies]
+# 仅测试启用：虚拟时钟（tokio::time::pause/advance）驱动 Poller 的 tick
+tokio = { version = "1.53.2", features = ["test-util"] }
 wiremock = "0.6.5"
