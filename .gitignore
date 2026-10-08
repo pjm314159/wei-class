@@ -2,3 +2,5 @@
 /old/
 # 本地临时文件目录
 .temp/
+# 本地环境配置（模板见 .env.example）
+.env
