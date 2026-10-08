@@ -12,7 +12,9 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 thiserror = { version = "2.0.21", features = ["std"] }
 tokio = { version = "1.53.2", features = ["macros", "net", "rt-multi-thread", "time", "sync"] }
-tokio-tungstenite = "0.30.0"
+# `rustls-tls-webpki-roots`：出站 wss:// 需要 TLS 支持；内置根证书，
+# 运行层用 distroless（无系统 CA）也无需额外挂载证书。
+tokio-tungstenite = { version = "0.30.0", features = ["rustls-tls-webpki-roots"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
