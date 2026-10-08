@@ -1,7 +1,8 @@
 //! faye 客户端单例：连接生命周期、订阅表、心跳与事件广播。
 //!
 //! 对应 `docs/DESIGN.md` §4：
-//! - 进程内单例；活跃订阅命令驱动建连，`Shutdown` 或全部命令端关闭时优雅退出；
+//! - 进程内单例（`Idle → Ready` 由 [`Command::Ready`] 触发，即"进程内有活跃连接即保持就绪"）；
+//!   `Shutdown` 或全部命令端关闭时优雅退出；
 //! - 断线指数退避重连（全新握手 + 订阅表重放）；`402`/unknown-client 类错误
 //!   视为 clientId 失效，跳过退避立即重连；
 //! - 心跳即周期发送 `/meta/connect`（首个 tick 立即触发，符合连接周期确认语义）。
@@ -31,6 +32,12 @@ pub struct FayeConfig {
 /// 发往客户端单例的命令。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
+    /// 保持连接就绪：活跃浏览器连接 0→1 时由 [`super::pool::FayePool`] 发送，
+    /// 触发建连与握手（幂等，可重复发送）。
+    ///
+    /// 对应 `docs/DESIGN.md` §1 的"Faye 连接预建"：握手不等待签到出现，
+    /// 签到被发现后订阅报文零 RTT 离机。
+    Ready,
     /// 订阅签到频道（幂等：重复订阅不再发送报文）。
     Subscribe {
         /// 课程 ID（频道组成）。
@@ -91,10 +98,15 @@ async fn run(
     let mut subscriptions = Subscriptions::new();
     let mut counter: u64 = 0;
     let mut backoff = Duration::from_secs(1).min(config.backoff_max);
+    // 收到过 `Ready` 即持续保持就绪：断线重连不再退回空闲等待。
+    let mut keep_ready = false;
 
     'outer: loop {
-        // 空闲等待：订阅表为空时阻塞至首条命令。
-        if subscriptions.is_empty() && !wait_for_command(&mut cmd_rx, &mut subscriptions).await {
+        // 空闲等待：未要求保持就绪且订阅表为空时，阻塞至首条命令。
+        if !keep_ready
+            && subscriptions.is_empty()
+            && !wait_for_command(&mut cmd_rx, &mut subscriptions, &mut keep_ready).await
+        {
             break 'outer;
         }
 
@@ -182,6 +194,8 @@ async fn active(
                     shutdown_graceful(&mut ws, &client_id, counter).await;
                     return ActiveExit::Stop;
                 }
+                // 已就绪时重复到达的 `Ready` 无副作用。
+                Some(Command::Ready) => {}
                 Some(Command::Subscribe { course_id, sign_id }) => {
                     if subscriptions.insert((course_id, sign_id)) {
                         let frame = Message::subscribe(
@@ -226,12 +240,19 @@ async fn active(
 }
 
 /// 空闲阶段等待首条命令；返回 `false` 表示任务应终止。
+///
+/// [`Command::Ready`] 不产生订阅，仅置位 `keep_ready` 使客户端保持就绪。
 async fn wait_for_command(
     cmd_rx: &mut mpsc::Receiver<Command>,
     subscriptions: &mut Subscriptions,
+    keep_ready: &mut bool,
 ) -> bool {
     match cmd_rx.recv().await {
         None | Some(Command::Shutdown) => false,
+        Some(Command::Ready) => {
+            *keep_ready = true;
+            true
+        }
         Some(Command::Subscribe { course_id, sign_id }) => {
             subscriptions.insert((course_id, sign_id));
             true
@@ -256,6 +277,7 @@ async fn establish(
             },
             command = cmd_rx.recv() => match command {
                 None | Some(Command::Shutdown) => return None,
+                Some(Command::Ready) => {}
                 Some(Command::Subscribe { course_id, sign_id }) => {
                     subscriptions.insert((course_id, sign_id));
                 }
@@ -500,6 +522,27 @@ mod tests {
                 url: String::from("https://example.test/qr/round2"),
             }
         );
+        server.await??;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn ready_command_establishes_connection_without_subscription() -> ServerResult {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+        let server: tokio::task::JoinHandle<ServerResult> = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await?;
+            let mut ws = accept_async(stream).await?;
+            let handshake = read_text(&mut ws).await.ok_or("no handshake")?;
+            assert!(handshake.contains("/meta/handshake"));
+            ws.send(WsMessage::text(HANDSHAKE_OK)).await?;
+            // 预建连不附带订阅：握手完成后连接即就绪（本测试不再期待其他帧）。
+            let _ = read_text(&mut ws).await;
+            Ok(())
+        });
+
+        let (cmd_tx, _event_rx) = spawn(client_config(addr));
+        cmd_tx.send(Command::Ready).await?;
         server.await??;
         Ok(())
     }
