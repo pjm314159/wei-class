@@ -36,6 +36,8 @@ cargo run
 ├── docs/       # 工程规范文档
 ├── src/        # 源码（重写中）
 ├── static/     # 前端单文件静态页（Alpine.js，零构建）
+├── Dockerfile  # cargo-chef 多阶段 → musl 静态二进制 → distroless
+├── docker-compose.yml / nginx.conf  # 部署编排与反向代理
 └── old/        # 旧版参考实现（不入库，本地保留）
 ```
 
@@ -66,6 +68,11 @@ cargo test
 6. 失效：openid 失效时收到 `sessionExpired` → 自动清除 cookie 并回到登录态
 
 前端门禁：`npx @biomejs/biome check static/`（Alpine.js 与二维码库经 CDN 引入，内网部署需自建静态资源）。
+
+## 部署
+
+`docker compose up -d` 即可（app 仅内网 + nginx 443 终止 TLS，证书 volume 挂载）。
+完整前置检查、构建与冒烟步骤见 [docs/DEPLOY.md](docs/DEPLOY.md)。
 
 ## 反馈
 

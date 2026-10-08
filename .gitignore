@@ -4,3 +4,5 @@
 .temp/
 # 本地环境配置（模板见 .env.example）
 .env
+# 部署证书（volume 挂载，禁止入库）
+/certs/
