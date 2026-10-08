@@ -1,2 +1,4 @@
 /target
 /old/
+# 本地临时文件目录
+.temp/

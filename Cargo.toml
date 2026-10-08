@@ -26,3 +26,16 @@ dbg_macro = "deny"
 # 输出统一走日志设施，禁止裸打印
 print_stdout = "deny"
 print_stderr = "deny"
+
+# release 构建：最佳运行性能优化
+[profile.release]
+# 最高优化档（显式声明以固定语义）
+opt-level = 3
+# 全程序 LTO：跨 crate 内联与死代码消除
+lto = "fat"
+# 单 codegen unit：最大化优化机会，牺牲编译时间
+codegen-units = 1
+# panic 直接中止进程：省去 unwinding 开销（lint 已禁 panic/unwrap/expect，fail-fast 语义一致）
+panic = "abort"
+# 剥离符号信息，减小产物体积
+strip = true
