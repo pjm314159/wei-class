@@ -21,3 +21,17 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Test
         run: cargo test --verbose
+      # 前端门禁（docs/DESIGN.md §7）：Biome 单二进制，无需 node_modules
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Frontend check (biome)
+        run: npx --yes @biomejs/biome@2.3.4 ci static/
+      # 预留：前端纯函数单测（哑渲染原则下用例接近为零，暂空）
+      - name: Frontend unit tests (node --test)
+        run: |
+          if find static -name '*.test.js' -print -quit | grep -q .; then
+            node --test "static/**/*.test.js"
+          else
+            echo "未发现 JS 单测用例，跳过"
+          fi
