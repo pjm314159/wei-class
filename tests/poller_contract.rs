@@ -81,6 +81,33 @@ async fn poller_subscribes_discovered_qr_sign_once() -> TestResult {
 }
 
 #[tokio::test]
+async fn poller_resumes_after_sign_closed() -> TestResult {
+    setup!(upstream, faye, app, QR_SIGNS, Duration::from_millis(200));
+    let mut faye = faye;
+
+    let ws = common::connect_ws(&app.ws_url(), Some(COOKIE)).await?;
+    let _ = ws;
+
+    // 发现签到 → 订阅。
+    let subscribe = faye.expect_frame("/meta/subscribe").await?;
+    assert!(subscribe.contains("/attendance/100001/200002/qr"));
+
+    // 上游推送 type:2 → faye 退订并清订阅表 → Poller 恢复轮询 → 再次订阅。
+    faye.push.send(String::from(common::CLOSED_PUSH)).await?;
+    let unsubscribe = faye.expect_frame("/meta/unsubscribe").await?;
+    assert!(unsubscribe.contains("/attendance/100001/200002/qr"));
+
+    let resubscribed = faye
+        .wait_frame("/meta/subscribe", Duration::from_secs(3))
+        .await?;
+    assert!(
+        resubscribed.is_some(),
+        "退订后应恢复轮询并再次订阅: {resubscribed:?}"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn poller_skips_non_qr_signs() -> TestResult {
     setup!(upstream, faye, app, GPS_SIGNS, Duration::from_millis(200));
     let mut faye = faye;

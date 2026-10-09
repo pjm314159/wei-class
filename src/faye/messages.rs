@@ -107,6 +107,24 @@ impl Message {
         }
     }
 
+    /// 构造 unsubscribe 请求（签到关闭后退订频道，`docs/DESIGN.md` §4）。
+    #[must_use]
+    pub fn unsubscribe(id: &str, client_id: &str, subscription: &str) -> Self {
+        Self {
+            channel: String::from("/meta/unsubscribe"),
+            id: Some(String::from(id)),
+            client_id: Some(String::from(client_id)),
+            version: None,
+            supported_connection_types: None,
+            connection_type: None,
+            subscription: Some(String::from(subscription)),
+            successful: None,
+            error: None,
+            advice: None,
+            data: None,
+        }
+    }
+
     /// 构造 connect 请求（WS 心跳即重复发送此报文）。
     #[must_use]
     pub fn connect(id: &str, client_id: &str) -> Self {
@@ -215,6 +233,23 @@ mod tests {
     #[test]
     fn subscribe_request_carries_client_and_subscription() {
         let msg = first_obj(&Message::subscribe("2", "abc", "/attendance/1/2/qr").to_frame());
+        assert_eq!(
+            msg.get("clientId").and_then(serde_json::Value::as_str),
+            Some("abc")
+        );
+        assert_eq!(
+            msg.get("subscription").and_then(serde_json::Value::as_str),
+            Some("/attendance/1/2/qr")
+        );
+    }
+
+    #[test]
+    fn unsubscribe_request_carries_client_and_subscription() {
+        let msg = first_obj(&Message::unsubscribe("4", "abc", "/attendance/1/2/qr").to_frame());
+        assert_eq!(
+            msg.get("channel").and_then(serde_json::Value::as_str),
+            Some("/meta/unsubscribe")
+        );
         assert_eq!(
             msg.get("clientId").and_then(serde_json::Value::as_str),
             Some("abc")

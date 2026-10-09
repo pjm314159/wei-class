@@ -104,6 +104,10 @@ stateDiagram-v2
 
 ```rust
 loop {
+    if subscribed {                       // 已监听到二维码（订阅表非空）
+        wait_until_unsubscribed().await;  // 暂停轮询：type:2 退订后恢复
+        continue;
+    }
     let interval = interval_rx.borrow_and_update().max(cfg.min_poll_interval); // .env 边界钳制
     tokio::time::sleep(interval).await;
     match query_active_signs(openid).await {
@@ -118,6 +122,8 @@ loop {
 }
 ```
 
+- **订阅后暂停轮询**（2026-10-09 产品决策）：监听到二维码后不再查询 `active_signs`（省 API、避风控）；
+  收到 `type:2`（签到关闭）退订、订阅表清空后恢复轮询。代价：监听 A 课期间不会发现 B 课新开的签。
 - 轮询间隔**以轮为单位读取**：客户端改值最迟在当前 sleep 结束后生效——即热更新。
 - 发现去重依赖 FayeClient 订阅表（§4），Poller 无状态。
 - Poller 启动与 FayeClient 启动**并行**：即使首个签到在预建连完成前被发现，`Subscribe` 也在单例内排队，连接就绪后立即补发。

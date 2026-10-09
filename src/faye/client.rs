@@ -11,7 +11,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, watch};
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
 use tracing::{debug, info, warn};
@@ -80,13 +80,23 @@ type BoxError = Box<dyn std::error::Error + Send + Sync>;
 /// faye WebSocket 流类型（客户端侧，可能经 TLS）。
 type WsStream = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 
-/// 启动客户端任务，返回命令发送端与事件接收端。
+/// 启动客户端任务，返回命令发送端、事件接收端与订阅状态。
+///
+/// 订阅状态（`watch<bool>`）：`true` 表示订阅表非空（已监听到二维码），
+/// 收到 `type:2` 退订且表清空后回到 `false`。
 #[must_use]
-pub fn spawn(config: FayeConfig) -> (mpsc::Sender<Command>, broadcast::Receiver<Event>) {
+pub fn spawn(
+    config: FayeConfig,
+) -> (
+    mpsc::Sender<Command>,
+    broadcast::Receiver<Event>,
+    tokio::sync::watch::Receiver<bool>,
+) {
     let (cmd_tx, cmd_rx) = mpsc::channel(32);
     let (event_tx, event_rx) = broadcast::channel(64);
-    tokio::spawn(run(config, cmd_rx, event_tx));
-    (cmd_tx, event_rx)
+    let (sub_tx, sub_rx) = tokio::sync::watch::channel(false);
+    tokio::spawn(run(config, cmd_rx, event_tx, sub_tx));
+    (cmd_tx, event_rx, sub_rx)
 }
 
 /// 客户端主循环：空闲等待 → 建连 → 订阅重放 → 活跃循环 → 断线善后。
@@ -94,6 +104,7 @@ async fn run(
     config: FayeConfig,
     mut cmd_rx: mpsc::Receiver<Command>,
     event_tx: broadcast::Sender<Event>,
+    sub_tx: tokio::sync::watch::Sender<bool>,
 ) {
     let mut subscriptions = Subscriptions::new();
     let mut counter: u64 = 0;
@@ -105,7 +116,7 @@ async fn run(
         // 空闲等待：未要求保持就绪且订阅表为空时，阻塞至首条命令。
         if !keep_ready
             && subscriptions.is_empty()
-            && !wait_for_command(&mut cmd_rx, &mut subscriptions, &mut keep_ready).await
+            && !wait_for_command(&mut cmd_rx, &mut subscriptions, &mut keep_ready, &sub_tx).await
         {
             break 'outer;
         }
@@ -117,6 +128,7 @@ async fn run(
             &mut counter,
             &mut backoff,
             &mut subscriptions,
+            &sub_tx,
         )
         .await
         else {
@@ -143,6 +155,7 @@ async fn run(
             &mut counter,
             &event_tx,
             &mut subscriptions,
+            &sub_tx,
         )
         .await
         {
@@ -169,6 +182,7 @@ enum ActiveExit {
 }
 
 /// 活跃循环：处理心跳、命令与服务器推送。
+#[allow(clippy::too_many_arguments)]
 async fn active(
     mut ws: WsStream,
     client_id: String,
@@ -177,6 +191,7 @@ async fn active(
     counter: &mut u64,
     event_tx: &broadcast::Sender<Event>,
     subscriptions: &mut Subscriptions,
+    sub_tx: &watch::Sender<bool>,
 ) -> ActiveExit {
     let mut heartbeat = tokio::time::interval(config.heartbeat);
     heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -198,6 +213,7 @@ async fn active(
                 Some(Command::Ready) => {}
                 Some(Command::Subscribe { course_id, sign_id }) => {
                     if subscriptions.insert((course_id, sign_id)) {
+                        sync_subscribed(sub_tx, subscriptions);
                         let frame = Message::subscribe(
                             &next_id(counter),
                             &client_id,
@@ -212,13 +228,34 @@ async fn active(
                 }
             },
             incoming = ws.next() => match incoming {
-                Some(Ok(WsMessage::Text(text))) => match handle_frame(&text, event_tx) {
-                    FrameOutcome::Ok => {}
-                    FrameOutcome::UnknownClient => {
-                        warn!("faye clientId 失效，立即重新握手");
-                        return ActiveExit::Retry { immediate: true };
+                Some(Ok(WsMessage::Text(text))) => {
+                    match handle_frame(&text, event_tx) {
+                        FrameOutcome::UnknownClient => {
+                            warn!("faye clientId 失效，立即重新握手");
+                            return ActiveExit::Retry { immediate: true };
+                        }
+                        FrameOutcome::Ok { closed } => {
+                            // 签到关闭（type:2）：退订频道并清订阅表（DESIGN §4）。
+                            for &(course_id, sign_id) in &closed {
+                                if !subscriptions.remove(&(course_id, sign_id)) {
+                                    continue;
+                                }
+                                sync_subscribed(sub_tx, subscriptions);
+                                let frame = Message::unsubscribe(
+                                    &next_id(counter),
+                                    &client_id,
+                                    &channel(course_id, sign_id),
+                                )
+                                .to_frame();
+                                if let Err(err) = ws.send(WsMessage::text(frame)).await {
+                                    warn!(error = %err, "faye 退订发送失败，转入重连");
+                                    return ActiveExit::Retry { immediate: false };
+                                }
+                                info!(course_id, sign_id, "签到已关闭，已退订频道");
+                            }
+                        }
                     }
-                },
+                }
                 Some(Ok(WsMessage::Ping(payload))) => {
                     if let Err(err) = ws.send(WsMessage::Pong(payload)).await {
                         warn!(error = %err, "faye Pong 发送失败，转入重连");
@@ -246,6 +283,7 @@ async fn wait_for_command(
     cmd_rx: &mut mpsc::Receiver<Command>,
     subscriptions: &mut Subscriptions,
     keep_ready: &mut bool,
+    sub_tx: &watch::Sender<bool>,
 ) -> bool {
     match cmd_rx.recv().await {
         None | Some(Command::Shutdown) => false,
@@ -255,6 +293,7 @@ async fn wait_for_command(
         }
         Some(Command::Subscribe { course_id, sign_id }) => {
             subscriptions.insert((course_id, sign_id));
+            sync_subscribed(sub_tx, subscriptions);
             true
         }
     }
@@ -268,6 +307,7 @@ async fn establish(
     counter: &mut u64,
     backoff: &mut Duration,
     subscriptions: &mut Subscriptions,
+    sub_tx: &watch::Sender<bool>,
 ) -> Option<(WsStream, String)> {
     loop {
         tokio::select! {
@@ -280,6 +320,7 @@ async fn establish(
                 Some(Command::Ready) => {}
                 Some(Command::Subscribe { course_id, sign_id }) => {
                     subscriptions.insert((course_id, sign_id));
+                    sync_subscribed(sub_tx, subscriptions);
                 }
             },
         }
@@ -358,14 +399,21 @@ async fn try_connect(
 
 /// 帧处理结果。
 enum FrameOutcome {
-    /// 正常。
-    Ok,
+    /// 正常；`closed` 为本轮需退订的频道（type:2 签到关闭）。
+    Ok { closed: Vec<(i64, i64)> },
     /// clientId 失效，需要重新握手。
     UnknownClient,
 }
 
-/// 解析并处理一帧文本：meta 响应检查错误码，业务推送转换为事件。
+/// 将订阅表是否非空同步到状态通道（无接收者时忽略）。
+fn sync_subscribed(sub_tx: &watch::Sender<bool>, subscriptions: &Subscriptions) {
+    let _ = sub_tx.send(!subscriptions.is_empty());
+}
+
+/// 解析并处理一帧文本：meta 响应检查错误码，业务推送转换为事件，
+/// 并收集需要退订的频道（type:2 签到关闭）。
 fn handle_frame(text: &str, event_tx: &broadcast::Sender<Event>) -> FrameOutcome {
+    let mut closed = Vec::new();
     for msg in parse_frame(text) {
         if msg.channel.starts_with("/meta/") {
             if let Some(err_text) = msg.error.as_deref()
@@ -375,7 +423,7 @@ fn handle_frame(text: &str, event_tx: &broadcast::Sender<Event>) -> FrameOutcome
             }
             continue;
         }
-        let Some((_, sign_id)) = parse_channel(&msg.channel) else {
+        let Some((course_id, sign_id)) = parse_channel(&msg.channel) else {
             continue;
         };
         let Some(data) = msg.data.as_ref() else {
@@ -391,12 +439,15 @@ fn handle_frame(text: &str, event_tx: &broadcast::Sender<Event>) -> FrameOutcome
                     broadcast_event(event_tx, Event::QrUrl { sign_id, url });
                 }
             }
-            2 => broadcast_event(event_tx, Event::Closed { sign_id }),
+            2 => {
+                broadcast_event(event_tx, Event::Closed { sign_id });
+                closed.push((course_id, sign_id));
+            }
             3 => broadcast_event(event_tx, Event::Congested { sign_id }),
             _ => debug!(kind, channel = %msg.channel, "未知的签到推送类型"),
         }
     }
-    FrameOutcome::Ok
+    FrameOutcome::Ok { closed }
 }
 
 /// 解析帧文本；解析失败返回空列表（faye 帧永远是 JSON 数组）。
@@ -461,6 +512,7 @@ mod tests {
     const SUBSCRIBE_OK: &str = r#"[{"id":"2","channel":"/meta/subscribe","successful":true,"clientId":"mock-client","subscription":"/attendance/100001/200002/qr"}]"#;
     const SUBSCRIBE_REJECTED: &str = r#"[{"id":"2","channel":"/meta/subscribe","successful":false,"error":"402::x-client-id:Unknown client","clientId":"mock-client","subscription":"/attendance/100001/200002/qr"}]"#;
     const QR_PUSH: &str = r#"[{"channel":"/attendance/100001/200002/qr","data":{"type":1,"qrUrl":"https://example.test/qr/round2"},"clientId":"mock-client"}]"#;
+    const CLOSE_PUSH: &str = r#"[{"channel":"/attendance/100001/200002/qr","data":{"type":2},"clientId":"mock-client"}]"#;
 
     type ServerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
@@ -507,7 +559,7 @@ mod tests {
             Ok(())
         });
 
-        let (cmd_tx, mut event_rx) = spawn(client_config(addr));
+        let (cmd_tx, mut event_rx, _sub_rx) = spawn(client_config(addr));
         cmd_tx
             .send(Command::Subscribe {
                 course_id: 100_001,
@@ -541,7 +593,7 @@ mod tests {
             Ok(())
         });
 
-        let (cmd_tx, _event_rx) = spawn(client_config(addr));
+        let (cmd_tx, _event_rx, _sub_rx) = spawn(client_config(addr));
         cmd_tx.send(Command::Ready).await?;
         server.await??;
         Ok(())
@@ -569,7 +621,7 @@ mod tests {
             Ok(())
         });
 
-        let (cmd_tx, _event_rx) = spawn(client_config(addr));
+        let (cmd_tx, _event_rx, _sub_rx) = spawn(client_config(addr));
         cmd_tx
             .send(Command::Subscribe {
                 course_id: 100_001,
@@ -607,7 +659,7 @@ mod tests {
             Ok(())
         });
 
-        let (cmd_tx, _event_rx) = spawn(client_config(addr));
+        let (cmd_tx, _event_rx, _sub_rx) = spawn(client_config(addr));
         cmd_tx
             .send(Command::Subscribe {
                 course_id: 100_001,
@@ -642,13 +694,63 @@ mod tests {
             Ok(())
         });
 
-        let (cmd_tx, _event_rx) = spawn(client_config(addr));
+        let (cmd_tx, _event_rx, _sub_rx) = spawn(client_config(addr));
         cmd_tx
             .send(Command::Subscribe {
                 course_id: 100_001,
                 sign_id: 200_002,
             })
             .await?;
+        server.await??;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn closed_push_unsubscribes_and_clears_subscriptions() -> ServerResult {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+        let server: tokio::task::JoinHandle<ServerResult> = tokio::spawn(async move {
+            // 第一条连接：订阅成功后推送 type:2，断言收到退订帧，然后断开。
+            let (stream, _) = listener.accept().await?;
+            let mut ws = accept_async(stream).await?;
+            read_text(&mut ws).await.ok_or("no handshake #1")?;
+            ws.send(WsMessage::text(HANDSHAKE_OK)).await?;
+            let subscribe = read_text(&mut ws).await.ok_or("no subscribe")?;
+            assert!(subscribe.contains("/meta/subscribe"));
+            ws.send(WsMessage::text(SUBSCRIBE_OK)).await?;
+            ws.send(WsMessage::text(CLOSE_PUSH)).await?;
+            let mut unsubscribed = false;
+            for _ in 0..5 {
+                let Some(text) = read_text(&mut ws).await else {
+                    break;
+                };
+                if text.contains("/meta/unsubscribe") {
+                    unsubscribed = true;
+                    break;
+                }
+            }
+            assert!(unsubscribed, "签到关闭后应发送退订帧");
+            Ok(())
+        });
+
+        let (cmd_tx, mut event_rx, mut sub_rx) = spawn(client_config(addr));
+        cmd_tx
+            .send(Command::Subscribe {
+                course_id: 100_001,
+                sign_id: 200_002,
+            })
+            .await?;
+        // 订阅表非空 → 状态置位。
+        sub_rx.changed().await?;
+        assert!(*sub_rx.borrow(), "订阅后应为 true");
+
+        let event = timeout(Duration::from_secs(5), event_rx.recv()).await??;
+        assert_eq!(event, Event::Closed { sign_id: 200_002 });
+
+        // 退订完成 → 订阅表清空 → 状态复位。
+        sub_rx.changed().await?;
+        assert!(!*sub_rx.borrow(), "退订后应为 false");
+
         server.await??;
         Ok(())
     }
@@ -678,7 +780,7 @@ mod tests {
             Ok(())
         });
 
-        let (cmd_tx, _event_rx) = spawn(FayeConfig {
+        let (cmd_tx, _event_rx, _sub_rx) = spawn(FayeConfig {
             endpoint: format!("ws://{addr}"),
             heartbeat: Duration::from_millis(30),
             backoff_max: Duration::from_millis(20),
