@@ -27,6 +27,9 @@ jobs:
             archive: wei-class-x86_64-linux.tar.gz
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -34,6 +37,13 @@ jobs:
       - name: Install musl tools
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Install git-cliff
+        run: npm install --global git-cliff@2
+
+      - name: Generate release notes
+        shell: bash
+        run: git cliff --unreleased --tag "${GITHUB_REF_NAME}" --strip header > RELEASE_NOTES.md
 
       - name: Build
         run: cargo build --release --locked --target ${{ matrix.target }}
@@ -60,5 +70,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" --generate-notes --title "${GITHUB_REF_NAME}" || true
+          gh release create "${GITHUB_REF_NAME}" --notes-file RELEASE_NOTES.md --title "${GITHUB_REF_NAME}" || true
           gh release upload "${GITHUB_REF_NAME}" "dist/${{ matrix.archive }}" --clobber
