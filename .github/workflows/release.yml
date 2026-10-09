@@ -1,20 +1,37 @@
 name: Release
 
-# 发版流程（docs/GIT.md）：dev → main 的 PR 合并后在 main 打 tag（vX.Y.Z），
-# 本 workflow 自动构建各平台预编译二进制并上传到 GitHub Release，
-# 供不使用 Docker/nginx 的用户本地部署直接下载。
+# 在 main 上打 tag（vX.Y.Z）后触发：check → build → GitHub Release。
+# CHANGELOG.md 与 Release 说明均由 git-cliff 生成（配置见 cliff.toml）；
+# 版本段落已由 prepare-release.yml 在发布 PR 中合入 CHANGELOG.md。
 
 on:
   push:
-    tags: ["v*"]
+    tags:
+      - "v*"
 
 permissions:
   contents: write
 
 jobs:
+  # ── Pre-release Checks ─────────────────────────────────────────────
+  check:
+    name: Pre-release Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format check (rustfmt)
+        run: cargo fmt --all -- --check
+      - name: Lint (clippy, strict)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Test
+        run: cargo test
+
+  # ── Build & Publish ────────────────────────────────────────────────
   build:
     name: build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    needs: check
     strategy:
       fail-fast: false
       matrix:
@@ -28,8 +45,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # git-cliff 需要完整历史
           fetch-tags: true
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -38,12 +56,21 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-      - name: Install git-cliff
-        run: npm install --global git-cliff@2
+      - name: Generate full changelog (for CHANGELOG.md)
+        uses: orhun/git-cliff-action@v4
+        env:
+          OUTPUT: CHANGELOG.md
+        with:
+          config: cliff.toml
+          args: --tag ${{ github.ref_name }}
 
-      - name: Generate release notes
-        shell: bash
-        run: git cliff --unreleased --tag "${GITHUB_REF_NAME}" --strip header > RELEASE_NOTES.md
+      - name: Generate release notes (latest tag only)
+        uses: orhun/git-cliff-action@v4
+        env:
+          OUTPUT: release-notes.md
+        with:
+          config: cliff.toml
+          args: --latest --tag ${{ github.ref_name }} --strip header
 
       - name: Build
         run: cargo build --release --locked --target ${{ matrix.target }}
@@ -56,6 +83,7 @@ jobs:
           Copy-Item "target/${{ matrix.target }}/release/wei-class.exe" dist/
           Copy-Item .env.example dist/
           Copy-Item README.md dist/
+          Copy-Item CHANGELOG.md dist/
           Compress-Archive -Path "dist/*" -DestinationPath "dist/${{ matrix.archive }}"
 
       - name: Package (Linux)
@@ -63,13 +91,21 @@ jobs:
         run: |
           mkdir -p dist
           cp "target/${{ matrix.target }}/release/wei-class" dist/
-          cp .env.example README.md dist/
-          tar -czf "dist/${{ matrix.archive }}" -C dist wei-class .env.example README.md
+          cp .env.example README.md CHANGELOG.md dist/
+          tar -czf "dist/${{ matrix.archive }}" -C dist wei-class .env.example README.md CHANGELOG.md
 
-      - name: Upload to GitHub Release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/${{ matrix.archive }}
+          body_path: release-notes.md
+
+      # 发布提交（版本号 + CHANGELOG 段落）只落在 main，需要带回 dev：
+      # 否则下一次 Prepare Release（从 dev 取 CHANGELOG）会缺少本次段落。
+      # 使用纯快进推送：dev 若已有新提交会失败（不会覆盖），且失败不影响发布结果。
+      - name: Sync dev with main (fast-forward, best effort)
+        if: matrix.os == 'ubuntu-latest'
+        continue-on-error: true
         run: |
-          gh release create "${GITHUB_REF_NAME}" --notes-file RELEASE_NOTES.md --title "${GITHUB_REF_NAME}" || true
-          gh release upload "${GITHUB_REF_NAME}" "dist/${{ matrix.archive }}" --clobber
+          git fetch origin main dev
+          git push origin origin/main:dev
