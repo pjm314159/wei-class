@@ -67,6 +67,7 @@ jobs:
           tar -czf "dist/${{ matrix.archive }}" -C dist wei-class .env.example README.md
 
       - name: Upload to GitHub Release
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
