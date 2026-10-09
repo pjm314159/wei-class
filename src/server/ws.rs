@@ -57,6 +57,7 @@ async fn session(socket: WebSocket, state: AppState, openid: String) {
         Deps {
             min,
             interval_rx,
+            subscribed_rx: lease.subscribed(),
             faye_tx: lease.command().clone(),
             out_tx,
             stop_rx,

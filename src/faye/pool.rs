@@ -9,7 +9,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, watch};
 use tracing::{info, warn};
 
 use super::client::{Command, Event, FayeConfig, spawn};
@@ -18,10 +18,11 @@ use crate::config::Config;
 /// 默认 `/faye` WebSocket 端点（实测确认，见 `docs/DESIGN.md` §2.1）。
 pub const DEFAULT_ENDPOINT: &str = "wss://www.teachermate.com.cn/faye";
 
-/// 一个已启动的客户端句柄（命令发送端 + 事件接收端原型）。
+/// 一个已启动的客户端句柄（命令发送端 + 事件接收端原型 + 订阅状态）。
 struct Handle {
     cmd_tx: mpsc::Sender<Command>,
     event_rx: broadcast::Receiver<Event>,
+    sub_rx: watch::Receiver<bool>,
 }
 
 /// faye 客户端池：进程内至多一个客户端，随活跃连接数启停。
@@ -68,16 +69,24 @@ impl FayePool {
         // 临界区内无 await：持锁时间可控，且不跨越挂起点。
         let mut guard = self.handle.lock().unwrap_or_else(PoisonError::into_inner);
         let mut started = false;
-        let (cmd_tx, event_rx) = {
+        let (cmd_tx, event_rx, sub_rx) = {
             let handle = guard.get_or_insert_with(|| {
                 started = true;
-                let (cmd_tx, event_rx) = spawn(self.config.clone());
+                let (cmd_tx, event_rx, sub_rx) = spawn(self.config.clone());
                 if let Err(err) = cmd_tx.try_send(Command::Ready) {
                     warn!(error = %err, "faye 就绪命令入队失败");
                 }
-                Handle { cmd_tx, event_rx }
+                Handle {
+                    cmd_tx,
+                    event_rx,
+                    sub_rx,
+                }
             });
-            (handle.cmd_tx.clone(), handle.event_rx.resubscribe())
+            (
+                handle.cmd_tx.clone(),
+                handle.event_rx.resubscribe(),
+                handle.sub_rx.clone(),
+            )
         };
         drop(guard);
         if started {
@@ -87,6 +96,7 @@ impl FayePool {
             pool,
             cmd_tx,
             event_rx,
+            sub_rx,
         }
     }
 
@@ -108,6 +118,7 @@ pub struct Lease {
     pool: Arc<FayePool>,
     cmd_tx: mpsc::Sender<Command>,
     event_rx: broadcast::Receiver<Event>,
+    sub_rx: watch::Receiver<bool>,
 }
 
 impl Lease {
@@ -115,6 +126,12 @@ impl Lease {
     #[must_use]
     pub fn events(&self) -> broadcast::Receiver<Event> {
         self.event_rx.resubscribe()
+    }
+
+    /// 取一条订阅状态接收端：`true` 表示已监听到二维码（订阅表非空）。
+    #[must_use]
+    pub fn subscribed(&self) -> watch::Receiver<bool> {
+        self.sub_rx.clone()
     }
 
     /// 命令发送端：Poller 用它下发 [`Command::Subscribe`]。
