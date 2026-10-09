@@ -72,8 +72,28 @@ cargo test
 
 ## 部署
 
-`docker compose up -d` 即可（app 仅内网 + nginx 443 终止 TLS，证书 volume 挂载）。
-完整前置检查、构建与冒烟步骤见 [docs/DEPLOY.md](docs/DEPLOY.md)。
+提供两种方式：
+
+- **本地部署（免 nginx，推荐个人使用）**：下载预编译二进制直接运行，浏览器访问 `http://127.0.0.1:8080`
+- **Docker Compose + nginx（推荐公网部署）**：`docker compose up -d`，见 [docs/DEPLOY.md](docs/DEPLOY.md)
+
+### 本地部署
+
+1. 到 [Releases](https://github.com/pjm314159/wei-class/releases) 下载对应平台压缩包并解压
+   （Windows：`wei-class-x86_64-windows.zip`；Linux：`wei-class-x86_64-linux.tar.gz`；
+   也可自行 `cargo build --release`）
+2. （可选）将 `.env.example` 复制为 `.env` 按需修改
+3. 运行 `wei-class`（Windows 直接双击或命令行执行；Linux `./wei-class`）
+4. 浏览器访问 <http://127.0.0.1:8080>
+
+说明：
+
+- 默认仅监听 `127.0.0.1:8080`；需要局域网访问时改 `.env` 中的 `LISTEN_ADDR=0.0.0.0:8080`
+- 前端页面与依赖已内置在二进制中，无需额外文件；日志按日写入 `LOG_DIR`（默认 `logs/`）
+- 停止服务：终端 `Ctrl+C`（Windows 关闭窗口即可）
+- 升级：下载新版本替换二进制即可（零持久化，无需迁移数据）
+
+公网部署的完整前置检查、构建与冒烟步骤见 [docs/DEPLOY.md](docs/DEPLOY.md)。
 
 ## 反馈
 
