@@ -66,6 +66,46 @@ async fn root_serves_static_page() -> TestResult {
 }
 
 #[tokio::test]
+async fn usage_page_and_favicon_are_served() -> TestResult {
+    setup!(upstream, faye, app);
+
+    let usage = reqwest::get(format!("{}/usage", app.base())).await?;
+    assert_eq!(usage.status(), 200);
+    assert!(usage.text().await?.contains("OpenID 获取说明"));
+
+    let icon = reqwest::get(format!("{}/favicon.ico", app.base())).await?;
+    assert_eq!(icon.status(), 200);
+    let content_type = icon
+        .headers()
+        .get("content-type")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        content_type.starts_with("image/x-icon"),
+        "content-type = {content_type}"
+    );
+
+    // vendor 本地依赖可被页面引用（消除 CDN 硬依赖）。
+    for path in ["/vendor/alpine.min.js", "/vendor/qrcode.min.js"] {
+        let script = reqwest::get(format!("{}{path}", app.base())).await?;
+        assert_eq!(script.status(), 200, "path = {path}");
+        let content_type = script
+            .headers()
+            .get("content-type")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_string();
+        assert!(
+            content_type.starts_with("application/javascript"),
+            "{path}: content-type = {content_type}"
+        );
+        assert!(!script.text().await?.is_empty(), "{path} 不应为空");
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn login_issues_two_hour_cookie_on_valid_openid() -> TestResult {
     setup!(upstream, faye, app);
     mount_active_signs(&upstream, 200, "[]").await;

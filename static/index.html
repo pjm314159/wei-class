@@ -2,35 +2,41 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>微助教签到助手</title>
-    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>云端签到助手</title>
+    <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon" />
+    <script src="vendor/qrcode.min.js"></script>
+    <script defer src="vendor/alpine.min.js"></script>
     <style>
       :root {
-        --bg: #f5f6f8;
-        --card: #ffffff;
-        --text: #1f2329;
-        --muted: #6b7280;
-        --line: #e5e7eb;
-        --accent: #2563eb;
-        --ok: #16a34a;
-        --warn: #d97706;
-        --danger: #dc2626;
+        --bg-color: #f0f2f5;
+        --text-color: #333;
+        --card-bg: white;
+        --card-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        --primary-color: #1a73e8;
+        --primary-hover: #1557b0;
+        --border-color: #ddd;
+        --muted: #666;
+        --success-bg: #d4edda;
+        --success-color: #155724;
+        --warning-bg: #fff3cd;
+        --warning-color: #856404;
+        --danger: #dc3545;
       }
 
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --bg: #14161a;
-          --card: #1c1f24;
-          --text: #e8eaed;
-          --muted: #9ca3af;
-          --line: #2c3138;
-          --accent: #60a5fa;
-          --ok: #4ade80;
-          --warn: #fbbf24;
-          --danger: #f87171;
-        }
+      body.dark-theme {
+        --bg-color: #121212;
+        --text-color: #e0e0e0;
+        --card-bg: #1e1e1e;
+        --card-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+        --primary-color: #1976d2;
+        --primary-hover: #1565c0;
+        --border-color: #444;
+        --muted: #9ca3af;
+        --success-bg: #1b5e20;
+        --success-color: #c8e6c9;
+        --warning-bg: #f57c00;
+        --warning-color: #ffe0b2;
       }
 
       /* x-cloak：Alpine 初始化后移除该属性，此前隐藏未渲染的模板 */
@@ -43,71 +49,57 @@
       }
 
       body {
-        margin: 0;
-        padding: 24px 16px 48px;
-        background: var(--bg);
-        color: var(--text);
-        font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
-        line-height: 1.6;
-      }
-
-      main {
-        max-width: 460px;
+        font-family: "Segoe UI", sans-serif;
+        max-width: 600px;
         margin: 0 auto;
-      }
-
-      h1 {
-        margin: 0 0 4px;
-        font-size: 20px;
-      }
-
-      .subtitle {
-        margin: 0 0 20px;
-        color: var(--muted);
-        font-size: 13px;
+        padding: 20px;
+        background: var(--bg-color);
+        color: var(--text-color);
+        transition:
+          background 0.3s,
+          color 0.3s;
       }
 
       .card {
-        background: var(--card);
-        border: 1px solid var(--line);
+        background: var(--card-bg);
+        padding: 30px;
         border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 16px;
+        box-shadow: var(--card-shadow);
+        margin-bottom: 20px;
+        transition: all 0.3s ease;
       }
 
-      label {
-        display: block;
-        font-size: 13px;
-        color: var(--muted);
-        margin-bottom: 6px;
+      h1,
+      h2 {
+        text-align: center;
+        color: var(--primary-color);
+        margin-top: 0;
       }
 
       input[type="text"],
       input[type="number"] {
         width: 100%;
-        padding: 10px 12px;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: transparent;
-        color: var(--text);
-        font-size: 14px;
+        padding: 12px;
+        margin: 10px 0;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        background: var(--card-bg);
+        color: var(--text-color);
       }
 
       input:focus {
-        outline: 2px solid var(--accent);
+        outline: 2px solid var(--primary-color);
         outline-offset: 1px;
       }
 
       button {
-        margin-top: 12px;
         width: 100%;
-        padding: 10px 14px;
-        border: 0;
-        border-radius: 8px;
-        background: var(--accent);
-        color: #fff;
-        font-size: 14px;
+        padding: 12px;
+        border: none;
+        border-radius: 6px;
         cursor: pointer;
+        font-size: 16px;
+        transition: background 0.3s;
       }
 
       button[disabled] {
@@ -115,230 +107,392 @@
         cursor: default;
       }
 
-      button.ghost {
-        background: transparent;
-        border: 1px solid var(--line);
-        color: var(--text);
+      .btn-primary {
+        background: var(--primary-color);
+        color: white;
       }
 
-      .row {
-        display: flex;
-        gap: 8px;
-        align-items: flex-end;
+      .btn-primary:hover {
+        background: var(--primary-hover);
       }
 
-      .row > div {
-        flex: 1;
+      .btn-secondary {
+        background: #6c757d;
+        color: white;
+        margin-top: 10px;
       }
 
-      .row button {
-        width: auto;
-        margin-top: 0;
-        padding: 10px 16px;
-      }
-
-      .status {
-        display: flex;
-        justify-content: space-between;
-        font-size: 13px;
-        color: var(--muted);
-      }
-
-      .dot {
-        display: inline-block;
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        margin-right: 6px;
-        background: var(--muted);
-      }
-
-      .dot.live {
-        background: var(--ok);
-      }
-
-      .dot.connecting {
-        background: var(--warn);
-      }
-
-      .dot.down {
+      .btn-danger {
         background: var(--danger);
+        color: white;
+        margin-top: 10px;
       }
 
-      .qr {
-        text-align: center;
-        padding: 8px 0;
-      }
-
-      .qr-box {
-        display: inline-block;
-        min-height: 200px;
-        padding: 12px;
-        background: #fff;
+      .status-box {
+        padding: 15px;
         border-radius: 8px;
+        text-align: center;
+        font-weight: bold;
+        margin: 20px 0;
+      }
+
+      .waiting {
+        background: var(--warning-bg);
+        color: var(--warning-color);
+        border: 1px solid var(--warning-bg);
+      }
+
+      .success {
+        background: var(--success-bg);
+        color: var(--success-color);
+        border: 1px solid var(--success-bg);
+      }
+
+      .spinner {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(0, 0, 0, 0.1);
+        border-left-color: var(--primary-color);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-right: 8px;
+        vertical-align: middle;
+      }
+
+      @keyframes spin {
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      .qr-display {
+        text-align: center;
+        margin-top: 20px;
+        padding: 20px;
+        border: 2px dashed var(--primary-color);
+        border-radius: 10px;
+        background-color: var(--bg-color);
+      }
+
+      .qrcode {
+        display: inline-block;
+        margin: 15px auto;
+        padding: 10px;
+        background: #fff;
+        border-radius: 6px;
       }
 
       .qr-link {
+        word-break: break-all;
+        color: var(--primary-color);
+        font-size: 0.9em;
         display: block;
         margin-top: 10px;
-        color: var(--accent);
-        font-size: 13px;
-        word-break: break-all;
+      }
+
+      .settings {
+        margin-top: 20px;
+        padding-top: 20px;
+        border-top: 1px solid var(--border-color);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .settings label {
+        cursor: pointer;
+        font-size: 14px;
+      }
+
+      .interval-row {
+        margin-top: 14px;
+        display: flex;
+        gap: 10px;
+        align-items: flex-end;
+      }
+
+      .interval-row > div {
+        flex: 1;
+      }
+
+      .interval-row button {
+        width: auto;
+        padding: 10px 16px;
+        margin: 0;
+      }
+
+      .interval-hint {
+        margin: 8px 0 0;
+        font-size: 0.85em;
+        color: var(--muted);
       }
 
       .notice {
-        margin-top: 12px;
+        margin-top: 10px;
         padding: 10px 12px;
-        border-radius: 8px;
-        font-size: 13px;
-        border: 1px solid var(--line);
-        color: var(--muted);
-      }
-
-      .notice.warn {
-        border-color: var(--warn);
-        color: var(--warn);
+        border-radius: 6px;
+        font-size: 0.9em;
+        text-align: center;
+        background: var(--warning-bg);
+        color: var(--warning-color);
       }
 
       .notice.danger {
-        border-color: var(--danger);
+        background: rgba(220, 53, 69, 0.12);
         color: var(--danger);
       }
 
-      .hint {
-        margin: 8px 0 0;
-        font-size: 12px;
+      .input-hint {
+        font-size: 0.85em;
         color: var(--muted);
+        margin-top: 5px;
+        margin-bottom: 15px;
+      }
+
+      .mono {
+        font-family: monospace;
+      }
+
+      /* 主题切换按钮 */
+      .theme-toggle {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        z-index: 1000;
+        transition: all 0.3s;
+      }
+
+      .theme-toggle:hover {
+        transform: scale(1.1);
+      }
+
+      .theme-toggle svg {
+        width: 20px;
+        height: 20px;
+        fill: var(--text-color);
+      }
+
+      /* 使用说明卡片 */
+      .usage-card {
+        background: var(--card-bg);
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: var(--card-shadow);
+        margin-bottom: 20px;
+        text-align: center;
+        border-left: 4px solid var(--primary-color);
+      }
+
+      .usage-card h3 {
+        margin-top: 0;
+        color: var(--primary-color);
+      }
+
+      .usage-card p {
+        margin-bottom: 15px;
+        color: var(--text-color);
+      }
+
+      .usage-link {
+        display: inline-block;
+        padding: 8px 16px;
+        background: var(--primary-color);
+        color: white;
+        text-decoration: none;
+        border-radius: 6px;
+        transition: background 0.3s;
+      }
+
+      .usage-link:hover {
+        background: var(--primary-hover);
       }
     </style>
   </head>
 
-  <body>
-    <main x-data="app" x-cloak>
-      <p class="notice danger" id="offline-tip" style="display: none">
-        页面脚本加载失败（Alpine.js 来自 CDN），请检查网络可达性或改由自建静态资源提供。
-      </p>
-      <h1>微助教签到助手</h1>
-      <p class="subtitle">openid 仅保存在本机浏览器，服务端不落盘</p>
-
-      <section class="card" x-show="!loggedIn">
-        <label for="openid">openid</label>
-        <input
-          id="openid"
-          type="text"
-          x-model="openidInput"
-          placeholder="粘贴微助教 openid"
-          autocomplete="off"
-          @keydown.enter="login()"
+  <body x-data="app" x-cloak>
+    <!-- 主题切换按钮 -->
+    <div class="theme-toggle" @click="toggleTheme()">
+      <svg viewBox="0 0 24 24">
+        <path
+          x-show="!dark"
+          d="M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5S14.76,7,12,7zM12,9c1.65,0,3,1.35,3,3s-1.35,3-3,3s-3-1.35,3-3S10.35,9,12,9zM12,2L9,5l3,3l3-3L12,2zM12,22l-3-3l3-3l3,3L12,22zM2,12l3-3l3,3l-3,3L2,12zM22,12l-3,3l-3-3l3-3L22,12z"
         />
-        <button @click="login()" x-text="loggingIn ? '登录中…' : '登录'" :disabled="loggingIn"></button>
-        <p class="notice danger" x-show="loginError" x-text="loginError"></p>
-        <p class="hint">登录时服务端会校验一次 openid，通过后签发 2 小时有效的 cookie。</p>
-      </section>
+        <path
+          x-show="dark"
+          d="M9 2c-1.05 0-2.05.16-3 .46 4.06 1.27 7 5.06 7 9.54 0 4.48-2.94 8.27-7 9.54.95.3 1.95.46 3 .46 5.52 0 10-4.48 10-10S14.52 2 9 2z"
+        />
+      </svg>
+    </div>
 
-      <section class="card" x-show="loggedIn">
-        <div class="status">
-          <span>
-            <i class="dot" :class="dotClass"></i>
-            <span x-text="statusText"></span>
-          </span>
-          <span x-text="limitText"></span>
-        </div>
+    <!-- 使用说明卡片 -->
+    <div class="usage-card">
+      <h3>如何使用？</h3>
+      <p>支持输入OpenID或包含OpenID的URL，系统会自动提取OpenID</p>
+      <a href="/usage" class="usage-link" target="_blank">查看使用说明</a>
+    </div>
 
-        <div class="qr">
-          <template x-if="qr">
-            <div>
-              <strong>扫描下方二维码签到</strong>
-              <div class="qr-box" x-ref="qrbox"></div>
-              <a class="qr-link" :href="qr.url" target="_blank" rel="noopener" x-text="qr.url"></a>
-              <p class="hint" x-text="'更新于 ' + qr.at"></p>
-            </div>
-          </template>
-          <template x-if="!qr">
-            <p class="hint" x-text="waitingText"></p>
-          </template>
-          <p class="notice" :class="noticeClass" x-show="notice" x-text="notice"></p>
-        </div>
-      </section>
+    <!-- 登录视图 -->
+    <div class="card" x-show="!loggedIn">
+      <h1>用户登录</h1>
+      <p style="text-align: center; color: var(--muted); font-size: 0.9em">请输入您的 OpenID 或包含OpenID的URL</p>
+      <input
+        type="text"
+        x-model="openidInput"
+        placeholder="输入openid或含openid的url"
+        autocomplete="off"
+        @keydown.enter="login()"
+      />
+      <div class="input-hint">支持格式：纯OpenID字符串 或 包含openid参数的URL</div>
+      <button class="btn-primary" @click="login()" :disabled="loggingIn" x-text="loggingIn ? '验证中...' : '开始监听'"></button>
+      <p class="notice danger" x-show="loginError" x-text="loginError"></p>
+    </div>
 
-      <section class="card" x-show="loggedIn">
-        <div class="row">
-          <div>
-            <label for="interval">轮询间隔（秒）</label>
-            <input id="interval" type="number" min="1" step="1" x-model.number="intervalInput" />
-          </div>
-          <button @click="applyInterval()">保存</button>
+    <!-- 监听视图 -->
+    <div class="card" x-show="loggedIn">
+      <h2>正在监听中</h2>
+      <p style="text-align: center">当前用户: <span class="mono" x-text="maskedOpenid"></span></p>
+
+      <div class="status-box" :class="statusBoxClass">
+        <span class="spinner" x-show="!qr && connection !== 'live'"></span>
+        <span x-text="statusText"></span>
+      </div>
+
+      <div class="qr-display" x-show="showQrArea">
+        <div><strong>扫描下方二维码签到</strong></div>
+        <div class="qrcode" x-ref="qrbox"></div>
+        <a class="qr-link" :href="qr ? qr.url : '#'" target="_blank" rel="noopener" x-text="qr ? qr.url : ''">点击直接跳转</a>
+      </div>
+
+      <p class="notice" x-show="congested">前方拥挤，请稍候重试</p>
+
+      <div class="settings">
+        <label>
+          <input type="checkbox" x-model="autoRedirect" @change="saveSettings()" />
+          检测成功后自动跳转（微信网页中可用）
+        </label>
+      </div>
+
+      <div class="interval-row">
+        <div>
+          <label for="interval">轮询间隔（秒）</label>
+          <input id="interval" type="number" min="1" step="1" x-model.number="intervalInput" />
         </div>
-        <p class="notice" x-show="intervalHint" x-text="intervalHint"></p>
-        <p class="hint">
-          间隔保存在本机（localStorage），每次改动即时生效；低于服务端下限的值会被自动上调。
-        </p>
-        <button class="ghost" @click="logout()">退出并清除 openid</button>
-      </section>
-    </main>
+        <button class="btn-secondary" @click="applyInterval()">保存</button>
+      </div>
+      <p class="interval-hint" x-show="intervalHint" x-text="intervalHint"></p>
+
+      <button class="btn-danger" @click="logout()">退出登录</button>
+    </div>
 
     <script>
       document.addEventListener("alpine:init", () => {
         Alpine.data("app", () => ({
+          // 登录
           openidInput: "",
           loggedIn: false,
           loggingIn: false,
           loginError: "",
+          openid: "",
+          // 连接
           connection: "idle",
-          minIntervalMs: 0,
-          intervalInput: 5,
-          requestedSeconds: 5,
-          intervalHint: "",
-          qr: null,
-          notice: "",
-          noticeClass: "",
           socket: null,
           retryTimer: null,
           expired: false,
+          // 签到
+          qr: null,
+          currentQrUrl: "",
+          isFirstQr: true,
+          redirecting: "",
+          closed: false,
+          congested: false,
+          // 设置
+          dark: false,
+          autoRedirect: true,
+          intervalInput: 5,
+          minIntervalMs: 0,
+          intervalHint: "",
+          requestedSeconds: 0,
 
           init() {
+            this.initTheme();
             const saved = Number(localStorage.getItem("wei-class:poll-interval"));
             if (Number.isFinite(saved) && saved >= 1) {
               this.intervalInput = Math.floor(saved);
             }
-            if (readCookie("openid")) {
+            this.autoRedirect = readCookie("auto_redirect") !== "false";
+            const openid = readCookie("openid");
+            if (openid) {
+              this.openid = openid;
               this.loggedIn = true;
               this.connect();
             }
           },
 
-          get dotClass() {
-            if (this.connection === "live") return "live";
-            if (this.connection === "connecting") return "connecting";
-            return "down";
+          get maskedOpenid() {
+            if (this.openid.length > 10) {
+              return `${this.openid.substring(0, 6)}***${this.openid.substring(this.openid.length - 4)}`;
+            }
+            return this.openid;
+          },
+
+          get statusBoxClass() {
+            return this.qr && !this.closed ? "success" : "waiting";
           },
 
           get statusText() {
-            if (this.connection === "live") return "已连接";
-            if (this.connection === "connecting") return "连接中…";
-            return "连接已断开，正在重试";
+            if (this.redirecting === "countdown") return "检测到签到，2秒后自动跳转...";
+            if (this.redirecting === "go") return "验证成功，正在跳转...";
+            if (this.closed) return "本轮签到已关闭，等待下一次开启";
+            if (this.congested) return "前方拥挤，请稍候重试";
+            if (this.qr) return "签到已就绪，请扫描下方二维码";
+            if (this.connection === "connecting") return "连接中...";
+            if (this.connection === "down") return "连接已断开，正在重试";
+            return "正在等待签到任务...";
           },
 
-          get limitText() {
-            if (this.minIntervalMs <= 0) return "";
-            return `服务端下限 ${this.minIntervalMs / 1000} 秒`;
+          get showQrArea() {
+            return Boolean(this.qr) && !this.redirecting && !this.closed;
           },
 
-          get waitingText() {
-            if (this.connection === "live") return "等待教师开启二维码签到…";
-            return "连接恢复后将自动继续监听";
+          initTheme() {
+            this.dark = localStorage.getItem("theme") === "dark";
+            document.body.classList.toggle("dark-theme", this.dark);
+          },
+
+          toggleTheme() {
+            this.dark = !this.dark;
+            document.body.classList.toggle("dark-theme", this.dark);
+            localStorage.setItem("theme", this.dark ? "dark" : "light");
           },
 
           async login() {
             if (this.loggingIn) return;
-            const openid = String(this.openidInput || "").trim();
-            if (!openid) {
-              this.loginError = "请填写 openid";
+            const raw = String(this.openidInput || "").trim();
+            if (!raw) {
+              this.loginError = "请输入OpenID或包含OpenID的URL";
               return;
             }
             this.loggingIn = true;
             this.loginError = "";
             try {
+              const openid = extractOpenIdFromUrl(raw);
+              if (!/^[a-fA-F0-9]{32}$/.test(openid)) {
+                this.loginError = "OpenID格式不正确（应为32位十六进制字符串）";
+                return;
+              }
               const response = await fetch("/api/login", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -349,11 +503,13 @@
                 this.loginError = reasonText(body.reason);
                 return;
               }
+              this.openid = openid;
               this.loggedIn = true;
               this.expired = false;
+              this.isFirstQr = true;
               this.connect();
             } catch {
-              this.loginError = "网络错误，请稍后重试";
+              this.loginError = "请求失败，请检查网络";
             } finally {
               this.loggingIn = false;
             }
@@ -368,7 +524,9 @@
 
             socket.addEventListener("open", () => {
               this.connection = "live";
-              this.send({ type: "interval", seconds: Math.max(1, Math.floor(this.intervalInput)) });
+              const seconds = Math.max(1, Math.floor(this.intervalInput));
+              this.requestedSeconds = seconds;
+              this.send({ type: "interval", seconds });
             });
             socket.addEventListener("message", (event) => {
               const message = parseMessage(event.data);
@@ -376,7 +534,6 @@
             });
             socket.addEventListener("close", () => {
               this.connection = "down";
-              this.qr = null;
               if (this.loggedIn && !this.expired && !this.retryTimer) {
                 this.retryTimer = setTimeout(() => {
                   this.retryTimer = null;
@@ -392,20 +549,16 @@
                 this.applyStatus(message.intervalMs, message.minIntervalMs);
                 break;
               case "qr":
-                if (!isSafeUrl(message.url)) break;
-                this.qr = { url: message.url, at: new Date().toLocaleTimeString() };
-                this.notice = "";
-                this.noticeClass = "";
-                this.$nextTick(() => this.renderQr());
+                this.handleQr(message.url);
                 break;
               case "closed":
+                this.closed = true;
                 this.qr = null;
-                this.notice = "本轮签到已关闭，等待下一次开启";
-                this.noticeClass = "";
+                this.currentQrUrl = "";
+                this.redirecting = "";
                 break;
               case "congested":
-                this.notice = "前方拥挤，请稍候重试";
-                this.noticeClass = "warn";
+                this.congested = true;
                 break;
               case "sessionExpired":
                 this.onExpired();
@@ -415,10 +568,47 @@
             }
           },
 
+          handleQr(url) {
+            if (!isSafeUrl(url)) return;
+            this.closed = false;
+            this.congested = false;
+            const first = this.isFirstQr;
+            this.isFirstQr = false;
+
+            if (this.currentQrUrl !== url) {
+              this.currentQrUrl = url;
+              this.qr = { url, at: new Date().toLocaleTimeString() };
+              this.$nextTick(() => this.renderQr());
+            }
+
+            if (!this.autoRedirect) return;
+            if (first) {
+              // 首次检测到签到：延时 2 秒，期间可取消勾选
+              this.redirecting = "countdown";
+              setTimeout(() => {
+                if (this.autoRedirect && this.qr && this.qr.url === url) {
+                  location.href = url;
+                } else if (this.redirecting === "countdown") {
+                  this.redirecting = "";
+                }
+              }, 2000);
+            } else {
+              // 监听中发现新签到：立即跳转
+              this.redirecting = "go";
+              location.href = url;
+            }
+          },
+
+          saveSettings() {
+            setCookie("auto_redirect", this.autoRedirect ? "true" : "false", 30);
+            if (this.autoRedirect && this.qr) {
+              location.href = this.qr.url;
+            }
+          },
+
           applyStatus(intervalMs, minIntervalMs) {
             this.minIntervalMs = minIntervalMs;
             const effective = Math.round(intervalMs / 1000);
-            const min = Math.ceil(minIntervalMs / 1000);
             if (this.requestedSeconds > 0 && effective > this.requestedSeconds) {
               this.intervalHint = `上报值低于服务端下限，已按 ${effective} 秒生效`;
             } else {
@@ -426,7 +616,7 @@
             }
             this.intervalInput = effective;
             localStorage.setItem("wei-class:poll-interval", String(effective));
-            this.requestedSeconds = Math.max(effective, min);
+            this.requestedSeconds = effective;
           },
 
           applyInterval() {
@@ -450,28 +640,39 @@
             if (typeof QRCode !== "function") return;
             new QRCode(box, {
               text: this.qr.url,
-              width: 200,
-              height: 200,
-              correctLevel: QRCode.CorrectLevel.M,
+              width: 180,
+              height: 180,
+              colorDark: "#000000",
+              colorLight: "#ffffff",
+              correctLevel: QRCode.CorrectLevel.H,
             });
           },
 
           onExpired() {
             this.expired = true;
             this.qr = null;
-            this.notice = "登录已失效，请重新输入 openid";
-            this.noticeClass = "danger";
+            this.currentQrUrl = "";
+            this.redirecting = "";
+            this.loginError = "登录已失效，请重新输入 openid";
             clearCookie("openid");
             this.loggedIn = false;
             this.closeSocket();
           },
 
           logout() {
+            if (!confirm("确定要停止监听并退出吗？")) return;
             clearCookie("openid");
             this.expired = true;
             this.loggedIn = false;
+            this.openid = "";
+            this.openidInput = "";
             this.qr = null;
-            this.notice = "";
+            this.currentQrUrl = "";
+            this.redirecting = "";
+            this.congested = false;
+            this.closed = false;
+            this.isFirstQr = true;
+            this.intervalHint = "";
             this.closeSocket();
           },
 
@@ -498,9 +699,40 @@
         return "";
       }
 
+      function setCookie(name, value, days) {
+        let expires = "";
+        if (days) {
+          const date = new Date();
+          date.setTime(date.getTime() + days * 24 * 60 * 60 * 1000);
+          expires = `; expires=${date.toUTCString()}`;
+        }
+        // biome-ignore lint/suspicious/noDocumentCookie: 仅写非敏感偏好（主题勾选），Cookie Store API 在目标浏览器覆盖不足
+        document.cookie = `${name}=${value || ""}${expires}; path=/; SameSite=Lax`;
+      }
+
       function clearCookie(name) {
         // biome-ignore lint/suspicious/noDocumentCookie: 需清除服务端签发的非 HttpOnly cookie，Cookie Store API 在目标浏览器覆盖不足
         document.cookie = `${name}=; Max-Age=0; path=/; SameSite=Lax`;
+      }
+
+      // 从输入中提取 openid：支持纯 openid 或包含 openid 参数的 URL
+      function extractOpenIdFromUrl(input) {
+        if (input.includes("://") || input.includes("openid=") || input.includes("?") || input.includes("&")) {
+          try {
+            const url = input.startsWith("http") ? new URL(input) : new URL(`https://${input}`);
+            const openid = url.searchParams.get("openid");
+            if (openid && openid.trim().length > 0) {
+              return openid.trim();
+            }
+          } catch {
+            // 非 URL：走正则兜底
+          }
+          const matches = input.match(/openid=([a-fA-F0-9]+)/g);
+          if (matches && matches.length > 0) {
+            return matches[matches.length - 1].split("=")[1];
+          }
+        }
+        return input.trim();
       }
 
       function parseMessage(raw) {
@@ -515,16 +747,6 @@
       function isSafeUrl(url) {
         return typeof url === "string" && (url.startsWith("https://") || url.startsWith("http://"));
       }
-
-      // CDN 不可达时 Alpine 不会初始化，x-cloak 会让页面永久空白：解除隐藏并提示。
-      window.addEventListener("load", () => {
-        if (window.Alpine) return;
-        document.querySelectorAll("[x-cloak]").forEach((el) => {
-          el.removeAttribute("x-cloak");
-        });
-        const tip = document.getElementById("offline-tip");
-        if (tip) tip.style.display = "block";
-      });
 
       function reasonText(reason) {
         if (reason === "tokenInvalid") return "openid 无效或已过期";
