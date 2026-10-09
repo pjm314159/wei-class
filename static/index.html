@@ -9,37 +9,50 @@
     <script defer src="vendor/alpine.min.js"></script>
     <style>
       :root {
-        --bg-color: #f0f2f5;
-        --text-color: #333;
-        --card-bg: white;
-        --card-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-        --primary-color: #1a73e8;
-        --primary-hover: #1557b0;
-        --border-color: #ddd;
-        --muted: #666;
-        --success-bg: #d4edda;
-        --success-color: #155724;
-        --warning-bg: #fff3cd;
-        --warning-color: #856404;
-        --danger: #dc3545;
+        color-scheme: light;
+        --bg: #f4f6fa;
+        --glow: rgba(37, 99, 235, 0.1);
+        --surface: #ffffff;
+        --surface-2: #f7f9fc;
+        --text: #111827;
+        --muted: #6b7280;
+        --border: #e5e8ef;
+        --accent: #2563eb;
+        --accent-strong: #1d4ed8;
+        --accent-soft: rgba(37, 99, 235, 0.1);
+        --ok: #16a34a;
+        --ok-soft: rgba(22, 163, 74, 0.12);
+        --warn: #b45309;
+        --warn-soft: rgba(217, 119, 6, 0.14);
+        --danger: #dc2626;
+        --danger-soft: rgba(220, 38, 38, 0.1);
+        --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+        --shadow-md: 0 10px 30px rgba(16, 24, 40, 0.08);
+        --radius: 18px;
       }
 
       body.dark-theme {
-        --bg-color: #121212;
-        --text-color: #e0e0e0;
-        --card-bg: #1e1e1e;
-        --card-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
-        --primary-color: #1976d2;
-        --primary-hover: #1565c0;
-        --border-color: #444;
-        --muted: #9ca3af;
-        --success-bg: #1b5e20;
-        --success-color: #c8e6c9;
-        --warning-bg: #f57c00;
-        --warning-color: #ffe0b2;
+        color-scheme: dark;
+        --bg: #0b0e14;
+        --glow: rgba(96, 165, 250, 0.14);
+        --surface: #141922;
+        --surface-2: #1a2130;
+        --text: #e7eaf0;
+        --muted: #98a1b3;
+        --border: #242c3a;
+        --accent: #60a5fa;
+        --accent-strong: #3b82f6;
+        --accent-soft: rgba(96, 165, 250, 0.16);
+        --ok: #4ade80;
+        --ok-soft: rgba(74, 222, 128, 0.16);
+        --warn: #fbbf24;
+        --warn-soft: rgba(251, 191, 36, 0.16);
+        --danger: #f87171;
+        --danger-soft: rgba(248, 113, 113, 0.16);
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+        --shadow-md: 0 14px 34px rgba(0, 0, 0, 0.5);
       }
 
-      /* x-cloak：Alpine 初始化后移除该属性，此前隐藏未渲染的模板 */
       [x-cloak] {
         display: none;
       }
@@ -49,352 +62,620 @@
       }
 
       body {
-        font-family: "Segoe UI", sans-serif;
-        max-width: 600px;
-        margin: 0 auto;
-        padding: 20px;
-        background: var(--bg-color);
-        color: var(--text-color);
+        margin: 0;
+        padding: 0 16px 40px;
+        min-height: 100vh;
+        background: radial-gradient(1200px 520px at 50% -12%, var(--glow), transparent), var(--bg);
+        color: var(--text);
+        font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+        line-height: 1.55;
+        -webkit-font-smoothing: antialiased;
         transition:
           background 0.3s,
           color 0.3s;
       }
 
-      .card {
-        background: var(--card-bg);
-        padding: 30px;
-        border-radius: 12px;
-        box-shadow: var(--card-shadow);
-        margin-bottom: 20px;
-        transition: all 0.3s ease;
+      .app {
+        max-width: 520px;
+        margin: 0 auto;
       }
 
-      h1,
-      h2 {
-        text-align: center;
-        color: var(--primary-color);
-        margin-top: 0;
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 20px 4px 14px;
+      }
+
+      .brand {
+        font-size: 16px;
+        font-weight: 650;
+        letter-spacing: 0.01em;
+      }
+
+      .icon-btn {
+        display: grid;
+        place-items: center;
+        width: 38px;
+        height: 38px;
+        padding: 0;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--surface);
+        color: var(--text);
+        cursor: pointer;
+        box-shadow: var(--shadow-sm);
+        transition:
+          transform 0.2s,
+          border-color 0.2s;
+      }
+
+      .icon-btn:hover {
+        transform: translateY(-1px);
+        border-color: var(--accent);
+      }
+
+      .icon-btn svg {
+        width: 18px;
+        height: 18px;
+        fill: currentColor;
+      }
+
+      .stack {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 22px;
+        box-shadow: var(--shadow-md);
+      }
+
+      h1 {
+        margin: 0 0 6px;
+        font-size: 20px;
+        letter-spacing: -0.01em;
+      }
+
+      h3 {
+        margin: 0 0 6px;
+        font-size: 15px;
+      }
+
+      .lead {
+        margin: 0 0 18px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .field {
+        display: block;
+      }
+
+      .field-label {
+        display: block;
+        margin-bottom: 6px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
       }
 
       input[type="text"],
       input[type="number"] {
         width: 100%;
-        padding: 12px;
-        margin: 10px 0;
-        border: 1px solid var(--border-color);
-        border-radius: 6px;
-        background: var(--card-bg);
-        color: var(--text-color);
+        padding: 11px 13px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--surface-2);
+        color: var(--text);
+        font-family: inherit;
+        font-size: 15px;
+        transition:
+          border-color 0.2s,
+          box-shadow 0.2s;
       }
 
       input:focus {
-        outline: 2px solid var(--primary-color);
-        outline-offset: 1px;
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 4px var(--accent-soft);
       }
 
-      button {
-        width: 100%;
-        padding: 12px;
-        border: none;
+      code {
+        padding: 1px 5px;
         border-radius: 6px;
-        cursor: pointer;
-        font-size: 16px;
-        transition: background 0.3s;
+        background: var(--surface-2);
+        font-family: ui-monospace, SFMono-Regular, monospace;
+        font-size: 0.88em;
       }
 
-      button[disabled] {
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        width: 100%;
+        padding: 11px 16px;
+        border: 1px solid transparent;
+        border-radius: 12px;
+        font-family: inherit;
+        font-size: 15px;
+        font-weight: 600;
+        text-decoration: none;
+        cursor: pointer;
+        transition:
+          transform 0.15s,
+          background 0.2s,
+          border-color 0.2s,
+          opacity 0.2s;
+      }
+
+      .btn:active {
+        transform: translateY(1px);
+      }
+
+      .btn[disabled] {
         opacity: 0.6;
         cursor: default;
       }
 
       .btn-primary {
-        background: var(--primary-color);
-        color: white;
-      }
-
-      .btn-primary:hover {
-        background: var(--primary-hover);
+        margin-top: 14px;
+        background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+        color: #fff;
+        box-shadow: 0 6px 18px var(--accent-soft);
       }
 
       .btn-secondary {
-        background: #6c757d;
-        color: white;
-        margin-top: 10px;
-      }
-
-      .btn-danger {
-        background: var(--danger);
-        color: white;
-        margin-top: 10px;
-      }
-
-      .status-box {
-        padding: 15px;
-        border-radius: 8px;
-        text-align: center;
-        font-weight: bold;
-        margin: 20px 0;
-      }
-
-      .waiting {
-        background: var(--warning-bg);
-        color: var(--warning-color);
-        border: 1px solid var(--warning-bg);
-      }
-
-      .success {
-        background: var(--success-bg);
-        color: var(--success-color);
-        border: 1px solid var(--success-bg);
-      }
-
-      .spinner {
-        display: inline-block;
-        width: 16px;
-        height: 16px;
-        border: 2px solid rgba(0, 0, 0, 0.1);
-        border-left-color: var(--primary-color);
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-        margin-right: 8px;
-        vertical-align: middle;
-      }
-
-      @keyframes spin {
-        100% {
-          transform: rotate(360deg);
-        }
-      }
-
-      .qr-display {
-        text-align: center;
-        margin-top: 20px;
-        padding: 20px;
-        border: 2px dashed var(--primary-color);
-        border-radius: 10px;
-        background-color: var(--bg-color);
-      }
-
-      .qrcode {
-        display: inline-block;
-        margin: 15px auto;
-        padding: 10px;
-        background: #fff;
-        border-radius: 6px;
-      }
-
-      .qr-link {
-        word-break: break-all;
-        color: var(--primary-color);
-        font-size: 0.9em;
-        display: block;
-        margin-top: 10px;
-      }
-
-      .settings {
-        margin-top: 20px;
-        padding-top: 20px;
-        border-top: 1px solid var(--border-color);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 10px;
-      }
-
-      .settings label {
-        cursor: pointer;
-        font-size: 14px;
-      }
-
-      .interval-row {
         margin-top: 14px;
-        display: flex;
-        gap: 10px;
-        align-items: flex-end;
+        border-color: var(--border);
+        background: var(--surface-2);
+        color: var(--text);
       }
 
-      .interval-row > div {
-        flex: 1;
+      .btn-secondary:hover {
+        border-color: var(--accent);
       }
 
-      .interval-row button {
+      .btn-ghost {
+        border-color: var(--border);
+        background: transparent;
+        color: var(--text);
+      }
+
+      .btn-ghost:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+
+      .btn-sm {
         width: auto;
-        padding: 10px 16px;
-        margin: 0;
+        padding: 7px 14px;
+        font-size: 13px;
       }
 
-      .interval-hint {
-        margin: 8px 0 0;
-        font-size: 0.85em;
+      .hint {
+        margin: 10px 0 0;
         color: var(--muted);
+        font-size: 12.5px;
       }
 
-      .notice {
-        margin-top: 10px;
+      .alert {
+        margin: 12px 0 0;
         padding: 10px 12px;
-        border-radius: 6px;
-        font-size: 0.9em;
-        text-align: center;
-        background: var(--warning-bg);
-        color: var(--warning-color);
+        border-radius: 12px;
+        font-size: 13.5px;
       }
 
-      .notice.danger {
-        background: rgba(220, 53, 69, 0.12);
+      .alert-danger {
+        background: var(--danger-soft);
         color: var(--danger);
       }
 
-      .input-hint {
-        font-size: 0.85em;
+      /* 状态胶囊 */
+      .qr-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: var(--warn-soft);
+        color: var(--warn);
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .pill.ok {
+        background: var(--ok-soft);
+        color: var(--ok);
+      }
+
+      .pill.err {
+        background: var(--danger-soft);
+        color: var(--danger);
+      }
+
+      .pill .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: currentColor;
+        animation: breathe 1.8s ease-in-out infinite;
+      }
+
+      @keyframes breathe {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.35;
+        }
+      }
+
+      .meta {
         color: var(--muted);
-        margin-top: 5px;
-        margin-bottom: 15px;
+        font-size: 12.5px;
+        white-space: nowrap;
+      }
+
+      /* 二维码舞台 */
+      .stage {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding-top: 18px;
+      }
+
+      .qr-frame {
+        position: relative;
+        padding: 14px;
+        border-radius: 16px;
+        background: #fff;
+        box-shadow:
+          0 0 0 1px rgba(16, 24, 40, 0.06),
+          0 12px 28px rgba(16, 24, 40, 0.12);
+        animation: pop 0.35s ease-out;
+      }
+
+      @keyframes pop {
+        from {
+          opacity: 0;
+          transform: scale(0.94);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+
+      .qrcode {
+        display: block;
+        line-height: 0;
+      }
+
+      .qrcode img,
+      .qrcode canvas {
+        display: block;
+        width: 220px;
+        height: 220px;
+      }
+
+      /* 等待态 */
+      .empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 16px;
+        padding: 34px 0 26px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .pulse {
+        position: relative;
+        width: 92px;
+        height: 92px;
+        border: 1px dashed var(--border);
+        border-radius: 20px;
+      }
+
+      .pulse::before,
+      .pulse::after {
+        content: "";
+        position: absolute;
+        inset: 18px;
+        border-radius: 12px;
+        background: var(--accent-soft);
+      }
+
+      .pulse::after {
+        animation: ripple 1.8s ease-out infinite;
+      }
+
+      @keyframes ripple {
+        0% {
+          transform: scale(0.7);
+          opacity: 0.9;
+        }
+        100% {
+          transform: scale(1.35);
+          opacity: 0;
+        }
+      }
+
+      /* 用户与设置 */
+      .row-between {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .user {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+      }
+
+      .avatar {
+        display: grid;
+        place-items: center;
+        width: 38px;
+        height: 38px;
+        border-radius: 12px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .user-name {
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .user-sub {
+        color: var(--muted);
+        font-size: 12px;
       }
 
       .mono {
-        font-family: monospace;
+        font-family: ui-monospace, SFMono-Regular, monospace;
       }
 
-      /* 主题切换按钮 */
-      .theme-toggle {
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: var(--card-bg);
-        border: 1px solid var(--border-color);
-        border-radius: 50%;
-        width: 40px;
-        height: 40px;
+      .divider {
+        height: 1px;
+        margin: 18px 0;
+        background: var(--border);
+      }
+
+      .switch {
         display: flex;
         align-items: center;
-        justify-content: center;
+        gap: 12px;
         cursor: pointer;
-        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-        z-index: 1000;
-        transition: all 0.3s;
       }
 
-      .theme-toggle:hover {
-        transform: scale(1.1);
+      .switch input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
       }
 
-      .theme-toggle svg {
+      .switch-track {
+        position: relative;
+        flex: none;
+        width: 44px;
+        height: 26px;
+        border-radius: 999px;
+        background: var(--border);
+        transition: background 0.2s;
+      }
+
+      .switch-thumb {
+        position: absolute;
+        top: 3px;
+        left: 3px;
         width: 20px;
         height: 20px;
-        fill: var(--text-color);
+        border-radius: 50%;
+        background: #fff;
+        box-shadow: var(--shadow-sm);
+        transition: transform 0.2s;
+      }
+
+      .switch input:checked + .switch-track {
+        background: var(--accent);
+      }
+
+      .switch input:checked + .switch-track .switch-thumb {
+        transform: translateX(18px);
+      }
+
+      .switch input:focus-visible + .switch-track {
+        box-shadow: 0 0 0 4px var(--accent-soft);
+      }
+
+      .switch-text {
+        font-size: 14px;
+      }
+
+      .switch-text em {
+        color: var(--muted);
+        font-style: normal;
+        font-size: 12.5px;
+      }
+
+      .row {
+        display: flex;
+        align-items: flex-end;
+        gap: 10px;
+      }
+
+      .row .field {
+        flex: 1;
+      }
+
+      .row .btn {
+        width: auto;
+        margin-top: 0;
+        padding: 11px 18px;
+      }
+
+      .footer {
+        padding: 22px 4px 0;
+        color: var(--muted);
+        font-size: 12px;
+        text-align: center;
       }
 
       /* 使用说明卡片 */
       .usage-card {
-        background: var(--card-bg);
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: var(--card-shadow);
-        margin-bottom: 20px;
-        text-align: center;
-        border-left: 4px solid var(--primary-color);
-      }
-
-      .usage-card h3 {
-        margin-top: 0;
-        color: var(--primary-color);
+        border-left: 3px solid var(--accent);
       }
 
       .usage-card p {
-        margin-bottom: 15px;
-        color: var(--text-color);
-      }
-
-      .usage-link {
-        display: inline-block;
-        padding: 8px 16px;
-        background: var(--primary-color);
-        color: white;
-        text-decoration: none;
-        border-radius: 6px;
-        transition: background 0.3s;
-      }
-
-      .usage-link:hover {
-        background: var(--primary-hover);
+        margin: 0 0 14px;
+        color: var(--muted);
+        font-size: 13.5px;
       }
     </style>
   </head>
 
   <body x-data="app" x-cloak>
-    <!-- 主题切换按钮 -->
-    <div class="theme-toggle" @click="toggleTheme()">
-      <svg viewBox="0 0 24 24">
-        <path
-          x-show="!dark"
-          d="M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5S14.76,7,12,7zM12,9c1.65,0,3,1.35,3,3s-1.35,3-3,3s-3-1.35,3-3S10.35,9,12,9zM12,2L9,5l3,3l3-3L12,2zM12,22l-3-3l3-3l3,3L12,22zM2,12l3-3l3,3l-3,3L2,12zM22,12l-3,3l-3-3l3-3L22,12z"
-        />
-        <path
-          x-show="dark"
-          d="M9 2c-1.05 0-2.05.16-3 .46 4.06 1.27 7 5.06 7 9.54 0 4.48-2.94 8.27-7 9.54.95.3 1.95.46 3 .46 5.52 0 10-4.48 10-10S14.52 2 9 2z"
-        />
-      </svg>
-    </div>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">云端签到助手</div>
+        <button class="icon-btn" type="button" aria-label="切换主题" @click="toggleTheme()">
+          <svg viewBox="0 0 24 24">
+            <path
+              x-show="!dark"
+              d="M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5S14.76,7,12,7zM12,9c1.65,0,3,1.35,3,3s-1.35,3-3,3s-3-1.35,3-3S10.35,9,12,9zM12,2L9,5l3,3l3-3L12,2zM12,22l-3-3l3-3l3,3L12,22zM2,12l3-3l3,3l-3,3L2,12zM22,12l-3,3l-3-3l3-3L22,12z"
+            />
+            <path
+              x-show="dark"
+              d="M9 2c-1.05 0-2.05.16-3 .46 4.06 1.27 7 5.06 7 9.54 0 4.48-2.94 8.27-7 9.54.95.3 1.95.46 3 .46 5.52 0 10-4.48 10-10S14.52 2 9 2z"
+            />
+          </svg>
+        </button>
+      </header>
 
-    <!-- 使用说明卡片 -->
-    <div class="usage-card">
-      <h3>如何使用？</h3>
-      <p>支持输入OpenID或包含OpenID的URL，系统会自动提取OpenID</p>
-      <a href="/usage" class="usage-link" target="_blank">查看使用说明</a>
-    </div>
+      <!-- 登录视图 -->
+      <main class="stack" x-show="!loggedIn">
+        <section class="card">
+          <h1>开始监听签到</h1>
+          <p class="lead">输入 openid，或直接粘贴含 openid 的微助教链接。</p>
+          <label class="field">
+            <span class="field-label">OpenID / 链接</span>
+            <input
+              type="text"
+              x-model="openidInput"
+              placeholder="粘贴 openid 或完整 URL"
+              autocomplete="off"
+              @keydown.enter="login()"
+            />
+          </label>
+          <p class="hint">
+            支持纯 OpenID（32 位十六进制）或包含 <code>openid=</code> 参数的 URL，系统会自动提取
+          </p>
+          <button class="btn btn-primary" type="button" @click="login()" :disabled="loggingIn">
+            <span x-show="loggingIn">验证中…</span>
+            <span x-show="!loggingIn">开始监听</span>
+          </button>
+          <p class="alert alert-danger" x-show="loginError" x-text="loginError"></p>
+        </section>
 
-    <!-- 登录视图 -->
-    <div class="card" x-show="!loggedIn">
-      <h1>用户登录</h1>
-      <p style="text-align: center; color: var(--muted); font-size: 0.9em">请输入您的 OpenID 或包含OpenID的URL</p>
-      <input
-        type="text"
-        x-model="openidInput"
-        placeholder="输入openid或含openid的url"
-        autocomplete="off"
-        @keydown.enter="login()"
-      />
-      <div class="input-hint">支持格式：纯OpenID字符串 或 包含openid参数的URL</div>
-      <button class="btn-primary" @click="login()" :disabled="loggingIn" x-text="loggingIn ? '验证中...' : '开始监听'"></button>
-      <p class="notice danger" x-show="loginError" x-text="loginError"></p>
-    </div>
+        <section class="card usage-card">
+          <h3>如何使用？</h3>
+          <p>openid 用两小时即失效，且每次打开微助教都会刷新，请勿重复打开。</p>
+          <a class="btn btn-ghost" href="/usage" target="_blank" rel="noopener">查看使用说明</a>
+        </section>
+      </main>
 
-    <!-- 监听视图 -->
-    <div class="card" x-show="loggedIn">
-      <h2>正在监听中</h2>
-      <p style="text-align: center">当前用户: <span class="mono" x-text="maskedOpenid"></span></p>
+      <!-- 监听视图 -->
+      <main class="stack" x-show="loggedIn">
+        <section class="card">
+          <div class="qr-top">
+            <span class="pill" :class="statusTone">
+              <i class="dot"></i>
+              <span x-text="statusText"></span>
+            </span>
+            <span class="meta" x-text="limitText"></span>
+          </div>
 
-      <div class="status-box" :class="statusBoxClass">
-        <span class="spinner" x-show="!qr && connection !== 'live'"></span>
-        <span x-text="statusText"></span>
-      </div>
+          <template x-if="showQrArea">
+            <div class="stage">
+              <div class="qr-frame">
+                <div class="qrcode" x-ref="qrbox"></div>
+              </div>
+              <a
+                class="btn btn-secondary"
+                :href="qr ? qr.url : '#'"
+                target="_blank"
+                rel="noopener"
+                x-text="qr ? '点击直接跳转' : ''"
+              ></a>
+              <p class="hint" x-text="qr ? '更新于 ' + qr.at : ''"></p>
+            </div>
+          </template>
 
-      <div class="qr-display" x-show="showQrArea">
-        <div><strong>扫描下方二维码签到</strong></div>
-        <div class="qrcode" x-ref="qrbox"></div>
-        <a class="qr-link" :href="qr ? qr.url : '#'" target="_blank" rel="noopener" x-text="qr ? qr.url : ''">点击直接跳转</a>
-      </div>
+          <template x-if="!showQrArea">
+            <div class="empty">
+              <div class="pulse"></div>
+              <p x-text="waitingText"></p>
+            </div>
+          </template>
+        </section>
 
-      <p class="notice" x-show="congested">前方拥挤，请稍候重试</p>
+        <section class="card">
+          <div class="row-between">
+            <div class="user">
+              <span class="avatar" x-text="openid ? openid.charAt(0).toUpperCase() : '?'"></span>
+              <div>
+                <div class="user-name mono" x-text="maskedOpenid"></div>
+                <div class="user-sub">openid 仅存本机 cookie，2 小时有效</div>
+              </div>
+            </div>
+            <button class="btn btn-ghost btn-sm" type="button" @click="logout()">退出</button>
+          </div>
 
-      <div class="settings">
-        <label>
-          <input type="checkbox" x-model="autoRedirect" @change="saveSettings()" />
-          检测成功后自动跳转（微信网页中可用）
-        </label>
-      </div>
+          <div class="divider"></div>
 
-      <div class="interval-row">
-        <div>
-          <label for="interval">轮询间隔（秒）</label>
-          <input id="interval" type="number" min="1" step="1" x-model.number="intervalInput" />
-        </div>
-        <button class="btn-secondary" @click="applyInterval()">保存</button>
-      </div>
-      <p class="interval-hint" x-show="intervalHint" x-text="intervalHint"></p>
+          <label class="switch">
+            <input type="checkbox" x-model="autoRedirect" @change="saveSettings()" />
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+            <span class="switch-text">检测成功后自动跳转<em>（微信网页中可用）</em></span>
+          </label>
 
-      <button class="btn-danger" @click="logout()">退出登录</button>
+          <div class="divider"></div>
+
+          <div class="row">
+            <label class="field">
+              <span class="field-label">轮询间隔（秒）</span>
+              <input type="number" min="1" step="1" x-model.number="intervalInput" />
+            </label>
+            <button class="btn btn-secondary" type="button" @click="applyInterval()">保存</button>
+          </div>
+          <p class="hint" x-show="intervalHint" x-text="intervalHint"></p>
+          <p class="hint" x-show="!intervalHint" x-text="intervalMessage"></p>
+        </section>
+      </main>
+
+      <footer class="footer">微助教签到助手 · 零持久化，openid 不落盘</footer>
     </div>
 
     <script>
@@ -414,7 +695,6 @@
           // 签到
           qr: null,
           currentQrUrl: "",
-          isFirstQr: true,
           redirecting: "",
           closed: false,
           congested: false,
@@ -448,19 +728,38 @@
             return this.openid;
           },
 
-          get statusBoxClass() {
-            return this.qr && !this.closed ? "success" : "waiting";
+          get statusTone() {
+            if (this.congested) return "";
+            if (this.connection === "down") return "err";
+            if (this.qr && !this.closed) return "ok";
+            return "";
           },
 
           get statusText() {
-            if (this.redirecting === "countdown") return "检测到签到，2秒后自动跳转...";
-            if (this.redirecting === "go") return "验证成功，正在跳转...";
-            if (this.closed) return "本轮签到已关闭，等待下一次开启";
+            if (this.redirecting === "go") return "验证成功，正在跳转";
+            if (this.closed) return "本轮签到已关闭";
             if (this.congested) return "前方拥挤，请稍候重试";
-            if (this.qr) return "签到已就绪，请扫描下方二维码";
-            if (this.connection === "connecting") return "连接中...";
-            if (this.connection === "down") return "连接已断开，正在重试";
-            return "正在等待签到任务...";
+            if (this.qr) return "签到已就绪，请扫码";
+            if (this.connection === "connecting") return "连接中…";
+            if (this.connection === "down") return "连接已断开";
+            return "正在监听";
+          },
+
+          get waitingText() {
+            if (this.connection === "connecting") return "正在连接服务端…";
+            if (this.connection === "down") return "连接已断开，3 秒后自动重试";
+            if (this.closed) return "本轮签到已关闭，等待下一次开启";
+            if (this.congested) return "前方拥挤，请稍候";
+            return "等待教师开启签到…";
+          },
+
+          get limitText() {
+            if (this.minIntervalMs <= 0) return "";
+            return `下限 ${Math.ceil(this.minIntervalMs / 1000)}s`;
+          },
+
+          get intervalMessage() {
+            return `服务端下限 ${Math.ceil(Math.max(this.minIntervalMs, 1000) / 1000)} 秒，改动下一轮生效`;
           },
 
           get showQrArea() {
@@ -506,7 +805,6 @@
               this.openid = openid;
               this.loggedIn = true;
               this.expired = false;
-              this.isFirstQr = true;
               this.connect();
             } catch {
               this.loginError = "请求失败，请检查网络";
@@ -572,8 +870,6 @@
             if (!isSafeUrl(url)) return;
             this.closed = false;
             this.congested = false;
-            const first = this.isFirstQr;
-            this.isFirstQr = false;
 
             if (this.currentQrUrl !== url) {
               this.currentQrUrl = url;
@@ -581,19 +877,7 @@
               this.$nextTick(() => this.renderQr());
             }
 
-            if (!this.autoRedirect) return;
-            if (first) {
-              // 首次检测到签到：延时 2 秒，期间可取消勾选
-              this.redirecting = "countdown";
-              setTimeout(() => {
-                if (this.autoRedirect && this.qr && this.qr.url === url) {
-                  location.href = url;
-                } else if (this.redirecting === "countdown") {
-                  this.redirecting = "";
-                }
-              }, 2000);
-            } else {
-              // 监听中发现新签到：立即跳转
+            if (this.autoRedirect) {
               this.redirecting = "go";
               location.href = url;
             }
@@ -640,8 +924,8 @@
             if (typeof QRCode !== "function") return;
             new QRCode(box, {
               text: this.qr.url,
-              width: 180,
-              height: 180,
+              width: 220,
+              height: 220,
               colorDark: "#000000",
               colorLight: "#ffffff",
               correctLevel: QRCode.CorrectLevel.H,
@@ -671,7 +955,6 @@
             this.redirecting = "";
             this.congested = false;
             this.closed = false;
-            this.isFirstQr = true;
             this.intervalHint = "";
             this.closeSocket();
           },
