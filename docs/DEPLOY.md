@@ -1,5 +1,9 @@
 # 部署（Docker Compose + nginx）
 
+> 本文档面向 **Docker Compose + nginx 的公网部署**。个人本地使用（免 nginx）直接下载
+> [Releases](https://github.com/pjm314159/wei-class/releases) 预编译二进制运行即可，
+> 步骤见 [README 本地部署](../README.md#本地部署)。
+>
 > 对应 `docs/DESIGN.md` §8：双容器（nginx 公网入口 + app 仅内网），证书与配置 volume 挂载，零持久化。
 
 ## 拓扑
