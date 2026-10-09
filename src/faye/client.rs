@@ -14,7 +14,7 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
-use tracing::{debug, info, warn};
+use tracing::{Instrument, debug, info, info_span, warn};
 
 use super::messages::{Message, qr_url_from_data};
 
@@ -146,7 +146,8 @@ async fn run(
             continue 'outer;
         }
 
-        // 活跃循环：心跳 / 命令 / 推送三路复用。
+        // 活跃循环：心跳 / 命令 / 推送三路复用（日志自带连接上下文）。
+        let connection_span = info_span!("faye_connection", client_id = %client_id);
         match active(
             ws,
             client_id,
@@ -157,6 +158,7 @@ async fn run(
             &mut subscriptions,
             &sub_tx,
         )
+        .instrument(connection_span)
         .await
         {
             ActiveExit::Stop => break 'outer,
@@ -214,6 +216,7 @@ async fn active(
                 Some(Command::Subscribe { course_id, sign_id }) => {
                     if subscriptions.insert((course_id, sign_id)) {
                         sync_subscribed(sub_tx, subscriptions);
+                        debug!(course_id, sign_id, "订阅签到频道");
                         let frame = Message::subscribe(
                             &next_id(counter),
                             &client_id,

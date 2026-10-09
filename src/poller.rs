@@ -21,7 +21,7 @@ use std::time::Duration;
 
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::sleep;
-use tracing::{debug, info, warn};
+use tracing::{Instrument, debug, debug_span, info, warn};
 
 use crate::api::{ApiError, Sign, TeachmateClient};
 use crate::faye::client::Command;
@@ -59,6 +59,7 @@ where
         out_tx,
         mut stop_rx,
     } = deps;
+    let mut round: u32 = 0;
     loop {
         // 已监听到二维码：暂停轮询，等待签到关闭（订阅清空）或会话结束。
         if *subscribed_rx.borrow_and_update() {
@@ -93,27 +94,40 @@ where
                 return;
             }
         }
-        match query().await {
-            Ok(signs) => {
-                for sign in signs.into_iter().filter(|sign| sign.is_qr != 0) {
-                    let command = Command::Subscribe {
-                        course_id: sign.course_id,
-                        sign_id: sign.sign_id,
-                    };
-                    if faye_tx.send(command).await.is_err() {
-                        warn!("faye 命令通道已关闭，轮询退出");
-                        return;
+
+        round += 1;
+        let polled = async {
+            match query().await {
+                Ok(signs) => {
+                    let discovered: Vec<(i64, i64)> = signs
+                        .iter()
+                        .filter(|sign| sign.is_qr != 0)
+                        .map(|sign| (sign.course_id, sign.sign_id))
+                        .collect();
+                    for (course_id, sign_id) in discovered {
+                        debug!(course_id, sign_id, "发现二维码签到");
+                        let command = Command::Subscribe { course_id, sign_id };
+                        if faye_tx.send(command).await.is_err() {
+                            warn!("faye 命令通道已关闭，轮询退出");
+                            return false;
+                        }
                     }
+                    true
+                }
+                Err(ApiError::TokenInvalid) => {
+                    let _ = out_tx.send(ServerMessage::SessionExpired).await;
+                    info!("openid 已失效，轮询终止");
+                    false
+                }
+                Err(ApiError::Network(err)) => {
+                    warn!(error = %err, "本轮查询失败，下轮重试");
+                    true
                 }
             }
-            Err(ApiError::TokenInvalid) => {
-                let _ = out_tx.send(ServerMessage::SessionExpired).await;
-                info!("openid 已失效，轮询终止");
-                return;
-            }
-            Err(ApiError::Network(err)) => {
-                warn!(error = %err, "本轮查询失败，下轮重试");
-            }
+        };
+        // `false` 表示轮询应终止（openid 失效或 faye 通道关闭）。
+        if !polled.instrument(debug_span!("poll", round)).await {
+            return;
         }
     }
 }

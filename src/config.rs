@@ -20,6 +20,8 @@ pub const ENV_FAYE_HEARTBEAT_MS: &str = "FAYE_HEARTBEAT_MS";
 pub const ENV_RECONNECT_BACKOFF_MAX_MS: &str = "RECONNECT_BACKOFF_MAX_MS";
 /// 环境变量键：浏览器侧 WS 保活 ping 周期（毫秒）。
 pub const ENV_WS_PING_MS: &str = "WS_PING_MS";
+/// 环境变量键：日志文件目录（按日滚动）。
+pub const ENV_LOG_DIR: &str = "LOG_DIR";
 
 /// 服务运行配置。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,6 +36,8 @@ pub struct Config {
     pub reconnect_backoff_max: Duration,
     /// 浏览器侧 WS 保活 ping 周期。
     pub ws_ping: Duration,
+    /// 日志文件目录（按日滚动写入，`main` 初始化时使用）。
+    pub log_dir: String,
 }
 
 impl Config {
@@ -46,6 +50,7 @@ impl Config {
             faye_heartbeat: Duration::from_millis(5_000),
             reconnect_backoff_max: Duration::from_secs(30),
             ws_ping: Duration::from_secs(30),
+            log_dir: String::from("logs"),
         }
     }
 
@@ -92,6 +97,14 @@ impl Config {
                 }
                 ENV_WS_PING_MS => {
                     config.ws_ping = parse_duration_ms(value, config.ws_ping, key);
+                }
+                ENV_LOG_DIR => {
+                    let value = value.trim();
+                    if value.is_empty() {
+                        warn!(key, value, "日志目录为空，已回退默认值");
+                    } else {
+                        config.log_dir = String::from(value);
+                    }
                 }
                 _ => {}
             }

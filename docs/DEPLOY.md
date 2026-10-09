@@ -18,6 +18,7 @@ app 不映射主机端口，公网只暴露 nginx 443；出站 WSS 由 app 容�
 | TLS 证书 | `./certs/fullchain.pem`、`./certs/privkey.pem` | 以只读 volume 挂入 nginx；**不进镜像**，续期只需替换文件 |
 | nginx 配置 | `./nginx.conf` | 以只读 volume 挂入；含 WS `Upgrade` 透传与 `proxy_read_timeout 75s`（须 > `WS_PING_MS`） |
 | 环境变量 | `./.env`（可选） | 缺省按内置默认值运行，模板见 `.env.example` |
+| 日志目录 | 容器内 `LOG_DIR`（默认 `logs`） | 按日滚动写入；如需持久化可在 compose 的 app 服务挂载 volume（如 `./logs:/app/logs`） |
 | 出站网络 | 容器可访问 `www.teachermate.com.cn`、`v18.teachermate.cn` | faye 与 API 出站地址 |
 
 `docker compose config` 可先行校验编排文件。
