@@ -16,10 +16,10 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::interval;
-use tracing::{debug, info, warn};
+use tracing::{Instrument, debug, info, info_span, warn};
 
 use super::AppState;
-use super::cookie::parse as parse_openid;
+use super::cookie::{mask_openid, parse as parse_openid};
 use crate::faye::client::Event;
 use crate::poller::{Deps, Poller, clamp};
 use crate::protocol::{ClientMessage, ServerMessage};
@@ -33,7 +33,10 @@ pub async fn handler(
     let openid = parse_openid(&headers);
     ws.on_upgrade(move |socket| async move {
         match openid {
-            Some(openid) => session(socket, state, openid).await,
+            Some(openid) => {
+                let span = info_span!("browser_session", user = %mask_openid(&openid));
+                session(socket, state, openid).instrument(span).await;
+            }
             None => expired(socket).await,
         }
     })
@@ -51,6 +54,7 @@ async fn session(socket: WebSocket, state: AppState, openid: String) {
     let (interval_tx, interval_rx) = watch::channel(min);
     let (out_tx, mut out_rx) = mpsc::channel(8);
     let (stop_tx, stop_rx) = oneshot::channel();
+    let masked = mask_openid(&openid);
     let poller = Poller::new(
         openid,
         state.api().clone(),
@@ -63,7 +67,8 @@ async fn session(socket: WebSocket, state: AppState, openid: String) {
             stop_rx,
         },
     );
-    let poller_task = tokio::spawn(poller.run());
+    let poller_span = info_span!("poller", user = %masked);
+    let poller_task = tokio::spawn(poller.run().instrument(poller_span));
 
     let (mut ws_tx, mut ws_rx) = socket.split();
 

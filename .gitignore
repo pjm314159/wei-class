@@ -6,3 +6,5 @@
 .env
 # 部署证书（volume 挂载，禁止入库）
 /certs/
+# 运行日志（tracing-appender 按日滚动）
+/logs/

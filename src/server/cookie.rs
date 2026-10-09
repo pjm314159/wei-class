@@ -47,6 +47,20 @@ fn is_safe_byte(byte: u8) -> bool {
     matches!(byte, 0x21..=0x7e) && !matches!(byte, b';' | b'"' | b'\\')
 }
 
+/// 脱敏 openid 用于日志展示：保留前 6 位与后 4 位，其余以 `***` 代替。
+///
+/// openid 属于用户凭据，日志中禁止完整输出。
+#[must_use]
+pub fn mask_openid(openid: &str) -> String {
+    let chars: Vec<char> = openid.chars().collect();
+    if chars.len() <= 10 {
+        return "*".repeat(chars.len());
+    }
+    let head: String = chars.iter().take(6).collect();
+    let tail: String = chars[chars.len() - 4..].iter().collect();
+    format!("{head}***{tail}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -81,6 +95,16 @@ mod tests {
         assert_eq!(parse(&HeaderMap::new()), None);
         assert_eq!(parse(&cookie_header("theme=dark")?), None);
         Ok(())
+    }
+
+    #[test]
+    fn mask_openid_keeps_head_and_tail_only() {
+        assert_eq!(
+            mask_openid("0123456789abcdef0123456789abcdef"),
+            "012345***cdef"
+        );
+        assert_eq!(mask_openid("short"), "*****");
+        assert_eq!(mask_openid(""), "");
     }
 
     #[test]
