@@ -1,9 +1,23 @@
 [package]
 name = "wei-class"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [dependencies]
+axum = { version = "0.8.9", features = ["ws"] }
+dotenvy = "0.15.7"
+futures-util = { version = "0.3.34", features = ["sink"] }
+reqwest = { version = "0.13.5", features = ["json"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+thiserror = { version = "2.0.21", features = ["std"] }
+tokio = { version = "1.53.2", features = ["macros", "net", "rt-multi-thread", "time", "sync"] }
+# `rustls-tls-webpki-roots`：出站 wss:// 需要 TLS 支持；内置根证书，
+# 运行层用 distroless（无系统 CA）也无需额外挂载证书。
+tokio-tungstenite = { version = "0.30.0", features = ["rustls-tls-webpki-roots"] }
+tracing = "0.1.44"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
 [lints.rust]
 # 安全底线：禁用 unsafe（forbid 不可被子模块 allow 覆盖）
@@ -26,3 +40,21 @@ dbg_macro = "deny"
 # 输出统一走日志设施，禁止裸打印
 print_stdout = "deny"
 print_stderr = "deny"
+
+# release 构建：最佳运行性能优化
+[profile.release]
+# 最高优化档（显式声明以固定语义）
+opt-level = 3
+# 全程序 LTO：跨 crate 内联与死代码消除
+lto = "fat"
+# 单 codegen unit：最大化优化机会，牺牲编译时间
+codegen-units = 1
+# panic 直接中止进程：省去 unwinding 开销（lint 已禁 panic/unwrap/expect，fail-fast 语义一致）
+panic = "abort"
+# 剥离符号信息，减小产物体积
+strip = true
+
+[dev-dependencies]
+# 仅测试启用：虚拟时钟（tokio::time::pause/advance）驱动 Poller 的 tick
+tokio = { version = "1.53.2", features = ["test-util"] }
+wiremock = "0.6.5"

@@ -1,0 +1,35 @@
+services:
+  # app 仅在 compose 内网可达，公网端口一律由 nginx 暴露
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: wei-class:local
+    restart: unless-stopped
+    env_file:
+      # .env 缺失时按内置默认值启动（见 docs/DESIGN.md §9）
+      - path: .env
+        required: false
+    environment:
+      LISTEN_ADDR: 0.0.0.0:8080
+    expose:
+      - "8080"
+    networks:
+      - internal
+
+  nginx:
+    image: nginx:stable-alpine
+    restart: unless-stopped
+    ports:
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - app
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge

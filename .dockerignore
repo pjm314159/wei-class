@@ -1,0 +1,11 @@
+# 构建上下文瘦身：避免本地产物与参考实现进入镜像层
+.git/
+.github/
+.idea/
+.temp/
+old/
+target/
+Dockerfile
+docker-compose.yml
+nginx.conf
+.env

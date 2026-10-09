@@ -101,7 +101,12 @@ BREAKING CHANGE: `run()` 现在返回 `Result<(), Error>`
 
 - 版本号遵循 [SemVer 2.0.0](https://semver.org/)，与 `Cargo.toml` 的 `version` 保持一致；
 - tag 仅打在 `main`：`git tag -a vX.Y.Z -m "release: vX.Y.Z" && git push origin vX.Y.Z`；
-- 破坏性变更升级主版本号，新功能升次版本号，修复升修订号。
+- 破坏性变更升级主版本号，新功能升次版本号，修复升修订号；
+- **变更日志全自动**（git-cliff，配置见 `cliff.toml`）：
+  - 推送 tag 后，`release.yml` 自动构建各平台二进制创建 GitHub Release，
+    说明取自 git-cliff 按本次 tag 生成的变更段落；
+  - 合并到 `main` / 推送 tag 后，`changelog.yml` 自动更新 `CHANGELOG.md`
+    并创建 PR，审阅合并即可，无需手写变更日志。
 
 ## 禁止事项（rulesets 强制，勿尝试绕过）
 
