@@ -55,10 +55,13 @@ fn init_logging(config: &Config) -> (Option<WorkerGuard>, Option<String>) {
         Err(err) => (None, None, Some(err.to_string())),
     };
 
+    // 注意注册顺序：registry 的 span 字段缓存按字段格式化器类型共享、
+    // 由先注册的 layer 生成。文件层必须先注册，否则控制台层（带色）生成的
+    // `span{field=...}` 缓存会被文件层复用，导致日志文件混入 ANSI 转义码。
     tracing_subscriber::registry()
         .with(filter)
-        .with(fmt::layer())
         .with(file_layer)
+        .with(fmt::layer())
         .init();
     (guard, file_error)
 }
