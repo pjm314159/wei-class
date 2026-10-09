@@ -47,5 +47,5 @@ docker compose logs -f app
 
 ## 已知约束
 
-- 前端依赖 CDN（Alpine.js、qrcodejs）：内网/离线部署需自建静态资源并替换 `static/index.html` 中的引用
+- 前端依赖已本地化（`static/vendor/`，服务端路由直出），无 CDN 依赖；升级依赖版本需重新下载 vendor 文件
 - 镜像基于 `gcr.io/distroless/cc-debian12`（无 shell）：排查依赖日志与 `docker compose logs`；faye 出站 TLS 使用内置根证书（rustls + webpki-roots），无需挂载系统 CA

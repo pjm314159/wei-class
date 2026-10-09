@@ -21,6 +21,14 @@ pub mod ws;
 
 /// 单文件静态页（`GET /`）：M5 前为占位页，前端就绪后直接替换 `static/index.html`。
 const INDEX_HTML: &str = include_str!("../../static/index.html");
+/// 使用说明页（`GET /usage`）：`OpenID` 获取说明，复刻旧版 `usage.html`。
+const USAGE_HTML: &str = include_str!("../../static/usage.html");
+/// 站点图标（`GET /favicon.ico`）。
+const FAVICON: &[u8] = include_bytes!("../../static/favicon.ico");
+/// 前端本地依赖：Alpine.js（`GET /vendor/alpine.min.js`）。
+const ALPINE_JS: &[u8] = include_bytes!("../../static/vendor/alpine.min.js");
+/// 前端本地依赖：qrcodejs（`GET /vendor/qrcode.min.js`）。
+const QRCODE_JS: &[u8] = include_bytes!("../../static/vendor/qrcode.min.js");
 
 /// 服务共享状态（随请求克隆，内部组件均为 `Arc` 或可克隆客户端）。
 #[derive(Clone)]
@@ -74,6 +82,10 @@ impl AppState {
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/", get(index))
+        .route("/usage", get(usage))
+        .route("/favicon.ico", get(favicon))
+        .route("/vendor/alpine.min.js", get(vendor_alpine))
+        .route("/vendor/qrcode.min.js", get(vendor_qrcode))
         .route("/api/login", post(login::login))
         .route("/ws", get(ws::handler))
         .with_state(state)
@@ -84,6 +96,42 @@ async fn index() -> Response {
     (
         [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
         INDEX_HTML,
+    )
+        .into_response()
+}
+
+/// 使用说明页：`GET /usage`。
+async fn usage() -> Response {
+    (
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        USAGE_HTML,
+    )
+        .into_response()
+}
+
+/// 站点图标：`GET /favicon.ico`。
+async fn favicon() -> Response {
+    ([(header::CONTENT_TYPE, "image/x-icon")], FAVICON).into_response()
+}
+
+/// Alpine.js：`GET /vendor/alpine.min.js`。
+async fn vendor_alpine() -> Response {
+    javascript(ALPINE_JS)
+}
+
+/// qrcodejs：`GET /vendor/qrcode.min.js`。
+async fn vendor_qrcode() -> Response {
+    javascript(QRCODE_JS)
+}
+
+/// 以 `application/javascript` 返回脚本内容。
+fn javascript(body: &'static [u8]) -> Response {
+    (
+        [(
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        )],
+        body,
     )
         .into_response()
 }
