@@ -84,6 +84,20 @@ fn parse_fixed(input: &str) -> u8 {
 - 错误类型后续统一（引入 `thiserror` / `anyhow` 时在本文件补充章节）；
 - 需要中断程序时使用受控退出（如 `main` 返回 `Result`），而非 `panic!`。
 
+## 前端门禁
+
+前端（`static/`）不引入构建链，用 **Biome** 单二进制做 lint + 格式，与 cargo fmt/clippy 对等：
+
+```bash
+npx --yes @biomejs/biome@2.3.4 check static/   # 本地：发现问题
+npx --yes @biomejs/biome@2.3.4 ci static/      # CI：同 check，面向 CI 输出
+```
+
+豁免规则与 Rust 侧一致：范围最小化 + 紧邻注释说明理由。当前两处豁免：
+`document.cookie` 直接赋值（需清除服务端签发的非 HttpOnly cookie）、`x-cloak` 的 `display: none`。
+
+JS 纯函数单测走 Node 内置 runner（`node --test "static/**/*.test.js"`，需传 glob 而非目录：Node 24 会把目录参数当作待执行文件）；按哑渲染原则用例接近为零，CI 中保留步骤、无用例时跳过。
+
 ## CI 强制项
 
 `.github/workflows/ci.yml` 中 check 名为 `test` 的任务依次执行：
@@ -91,5 +105,7 @@ fn parse_fixed(input: &str) -> u8 {
 1. `cargo fmt --all -- --check`（格式检查）
 2. `cargo clippy --all-targets --all-features -- -D warnings`（严格档 lint）
 3. `cargo test --verbose`（测试）
+4. `npx @biomejs/biome ci static/`（前端 lint + 格式）
+5. `node --test static/`（前端纯函数单测，无用例时跳过）
 
-三者全部通过，分支保护规则（rulesets）才允许合入。
+全部通过，分支保护规则（rulesets）才允许合入。
