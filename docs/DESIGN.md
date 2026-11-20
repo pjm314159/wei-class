@@ -116,13 +116,17 @@ stateDiagram-v2
 
 ```rust
 loop {
-    if subscribed {                       // 已监听到二维码（订阅表非空）
-        // 暂停轮询；坐标到达时补提交已发现的 GPS 签到
-        wait_for_unsubscribe_or_location().await;
-        continue;
+    if subscribed && !force_poll {        // 已监听到二维码（订阅表非空）
+        select! {
+            unsubscribe -> continue,
+            // 坐标更新：强制查询一轮，补提交已发现的 GPS 签到
+            location_changed -> { force_poll = true; continue; }
+        }
     }
-    let interval = interval_rx.borrow_and_update().max(cfg.min_poll_interval); // .env 边界钳制
-    tokio::time::sleep(interval).await;
+    if !force_poll {
+        let interval = interval_rx.borrow_and_update().max(cfg.min_poll_interval); // .env 边界钳制
+        sleep(interval).await;            // 期间坐标变化也会置位 force_poll
+    }
     match query_active_signs(openid).await {
         Ok(signs) => {
             // 1) 二维码优先：订阅必须在 T0+10s 窗口内离机
@@ -132,16 +136,16 @@ loop {
             // 2) 非二维码：自动提交（常开，无开关）
             for s in signs.iter().filter(|s| s.kind() != SignKind::Qr) {
                 if processed.contains(&key(s)) { continue; }
-                let outcome = submit_with_delay(s, location_rx.borrow().copied()).await;
-                if s.kind() == Gps && location_rx.borrow().is_none()
-                    && outcome == Rejected {
-                    pending.insert(key(s), s.clone());
-                    out_tx.send(LocationRequired { .. }).await?; // 每个签到一次
+                let coords = location_rx.borrow().copied();
+                let outcome = submit_with_delay(s, coords).await;
+                if s.kind() == Gps && coords.is_none() && outcome == Rejected {
+                    // 不登记 processed；提示一次，用户补坐标后由 force_poll 重试
+                    out_tx.send(LocationRequired { .. }).await?;
                 }
             }
         }
-        Err(TokenInvalid) => ws_tx.send(Out::SessionExpired).await?, // 前端清理 cookie 并断开
-        Err(Network) => continue,                                    // 本轮放弃，下轮重试
+        Err(TokenInvalid) => out_tx.send(SessionExpired).await?, // 前端清理 cookie 并断开
+        Err(Network) => continue,                                // 本轮放弃，下轮重试
     }
 }
 ```
@@ -150,6 +154,7 @@ loop {
   收到 `type:2`（签到关闭）退订、订阅表清空后恢复轮询。代价：监听 A 课期间不会发现 B 课新开的签。
 - **普通 / GPS 自动提交**（2026-11-20 产品决策）：常开，无前端关闭入口；普通签到只提交 `courseId/signId`，GPS 追加坐标。
 - **GPS 坐标**：浏览器通过 `WS ↑ {type:"location", lon, lat}` 上报，存在连接级 `watch` 中。未配置时先尝试无坐标提交（无范围限制的签到可成功）；业务失败后再下发 `locationRequired`，用户补坐标后重试。
+- **坐标热更新**：坐标变化会把 `force_poll` 置位，跳过当前 sleep（即使处于二维码暂停期）立即查询一轮；完成后若订阅表仍非空，恢复暂停。
 - **去重**：Poller 维护 `HashSet<(courseId, signId)>`（成功 / 已签到 / 终结失败），不依赖 `active_signs` 列表消失（实测签到后仍会返回）。
 - **重试**：网络错误最多 3 轮；业务错误不重试。提交前有 `SIGN_DELAY_MS` 延迟（默认 5s）与抖动，避免签到排名过于靠前。
 - 轮询间隔**以轮为单位读取**：客户端改值最迟在当前 sleep 结束后生效——即热更新。
