@@ -60,6 +60,7 @@ pub fn config() -> Config {
     Config {
         listen_addr: String::from("127.0.0.1:0"),
         ws_ping: Duration::from_millis(80),
+        sign_delay: Duration::ZERO,
         ..Config::defaults()
     }
 }

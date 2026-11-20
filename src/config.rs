@@ -20,6 +20,8 @@ pub const ENV_FAYE_HEARTBEAT_MS: &str = "FAYE_HEARTBEAT_MS";
 pub const ENV_RECONNECT_BACKOFF_MAX_MS: &str = "RECONNECT_BACKOFF_MAX_MS";
 /// 环境变量键：浏览器侧 WS 保活 ping 周期（毫秒）。
 pub const ENV_WS_PING_MS: &str = "WS_PING_MS";
+/// 环境变量键：普通 / GPS 签到提交前的基准延迟（毫秒，0 合法）。
+pub const ENV_SIGN_DELAY_MS: &str = "SIGN_DELAY_MS";
 /// 环境变量键：日志文件目录（按日滚动）。
 pub const ENV_LOG_DIR: &str = "LOG_DIR";
 
@@ -36,6 +38,8 @@ pub struct Config {
     pub reconnect_backoff_max: Duration,
     /// 浏览器侧 WS 保活 ping 周期。
     pub ws_ping: Duration,
+    /// 普通 / GPS 签到提交前的基准延迟（0 表示立即提交）。
+    pub sign_delay: Duration,
     /// 日志文件目录（按日滚动写入，`main` 初始化时使用）。
     pub log_dir: String,
 }
@@ -50,6 +54,7 @@ impl Config {
             faye_heartbeat: Duration::from_millis(5_000),
             reconnect_backoff_max: Duration::from_secs(30),
             ws_ping: Duration::from_secs(30),
+            sign_delay: Duration::from_millis(5_000),
             log_dir: String::from("logs"),
         }
     }
@@ -98,6 +103,9 @@ impl Config {
                 ENV_WS_PING_MS => {
                     config.ws_ping = parse_duration_ms(value, config.ws_ping, key);
                 }
+                ENV_SIGN_DELAY_MS => {
+                    config.sign_delay = parse_delay_ms(value, config.sign_delay, key);
+                }
                 ENV_LOG_DIR => {
                     let value = value.trim();
                     if value.is_empty() {
@@ -110,6 +118,16 @@ impl Config {
             }
         }
         config
+    }
+}
+
+/// 解析延迟毫秒数；`0` 合法（表示立即提交），仅非法值回退默认。
+fn parse_delay_ms(raw: &str, fallback: Duration, key: &str) -> Duration {
+    if let Ok(ms) = raw.parse::<u64>() {
+        Duration::from_millis(ms)
+    } else {
+        warn!(key, value = raw, "无法解析为 `u64` 毫秒数，已回退默认值");
+        fallback
     }
 }
 
@@ -149,12 +167,20 @@ mod tests {
             (ENV_FAYE_HEARTBEAT_MS, "3000"),
             (ENV_RECONNECT_BACKOFF_MAX_MS, "60000"),
             (ENV_WS_PING_MS, "15000"),
+            (ENV_SIGN_DELAY_MS, "2500"),
         ]);
         assert_eq!(config.listen_addr, "0.0.0.0:9000");
         assert_eq!(config.min_poll_interval, Duration::from_millis(2_500));
         assert_eq!(config.faye_heartbeat, Duration::from_millis(3_000));
         assert_eq!(config.reconnect_backoff_max, Duration::from_millis(60_000));
         assert_eq!(config.ws_ping, Duration::from_secs(15));
+        assert_eq!(config.sign_delay, Duration::from_millis(2_500));
+    }
+
+    #[test]
+    fn zero_sign_delay_is_valid() {
+        let config = build(&[(ENV_SIGN_DELAY_MS, "0")]);
+        assert_eq!(config.sign_delay, Duration::ZERO);
     }
 
     #[test]
@@ -164,6 +190,7 @@ mod tests {
             (ENV_FAYE_HEARTBEAT_MS, "-5"),
             (ENV_RECONNECT_BACKOFF_MAX_MS, "3.5"),
             (ENV_WS_PING_MS, "0"),
+            (ENV_SIGN_DELAY_MS, "abc"),
         ]);
         assert_eq!(config, Config::defaults());
     }
