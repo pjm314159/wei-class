@@ -266,6 +266,16 @@
         font-size: 12.5px;
       }
 
+      .sign-log {
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px dashed var(--border);
+      }
+
+      .sign-log .hint {
+        margin: 4px 0 0;
+      }
+
       .alert {
         margin: 12px 0 0;
         padding: 10px 12px;
@@ -672,6 +682,43 @@
           </div>
           <p class="hint" x-show="intervalHint" x-text="intervalHint"></p>
           <p class="hint" x-show="!intervalHint" x-text="intervalMessage"></p>
+
+          <div class="divider"></div>
+
+          <h3>普通 / 定位签到</h3>
+          <p class="hint">登录后自动提交，无需手动操作；坐标只保存在本机。</p>
+          <div class="row">
+            <label class="field">
+              <span class="field-label">经度</span>
+              <input
+                type="number"
+                min="-180"
+                max="180"
+                step="0.000001"
+                x-model.number="lonInput"
+                x-ref="lonInput"
+              />
+            </label>
+            <label class="field">
+              <span class="field-label">纬度</span>
+              <input
+                type="number"
+                min="-90"
+                max="90"
+                step="0.000001"
+                x-model.number="latInput"
+                x-ref="latInput"
+              />
+            </label>
+            <button class="btn btn-secondary" type="button" @click="saveLocation()">保存</button>
+          </div>
+          <p class="hint" x-show="locationHint" x-text="locationHint"></p>
+          <p class="hint" x-show="signNotice" x-text="signNotice"></p>
+          <div class="sign-log" x-show="signResults.length">
+            <template x-for="item in signResults" :key="item.key">
+              <p class="hint" x-text="item.text"></p>
+            </template>
+          </div>
         </section>
       </main>
 
@@ -705,12 +752,24 @@
           minIntervalMs: 0,
           intervalHint: "",
           requestedSeconds: 0,
+          // GPS / 自动签到
+          lonInput: "",
+          latInput: "",
+          locationHint: "",
+          signNotice: "",
+          signResults: [],
 
           init() {
             this.initTheme();
             const saved = Number(localStorage.getItem("wei-class:poll-interval"));
             if (Number.isFinite(saved) && saved >= 1) {
               this.intervalInput = Math.floor(saved);
+            }
+            const savedLocation = readLocation();
+            if (savedLocation) {
+              this.lonInput = savedLocation.lon;
+              this.latInput = savedLocation.lat;
+              this.locationHint = "坐标已保存（仅本机）";
             }
             this.autoRedirect = readCookie("auto_redirect") !== "false";
             const openid = readCookie("openid");
@@ -825,6 +884,7 @@
               const seconds = Math.max(1, Math.floor(this.intervalInput));
               this.requestedSeconds = seconds;
               this.send({ type: "interval", seconds });
+              this.sendSavedLocation();
             });
             socket.addEventListener("message", (event) => {
               const message = parseMessage(event.data);
@@ -857,6 +917,13 @@
                 break;
               case "congested":
                 this.congested = true;
+                break;
+              case "locationRequired":
+                this.signNotice = `检测到定位签到「${message.name || "未命名"}」，请填写坐标`;
+                this.$nextTick(() => this.$refs.lonInput?.focus());
+                break;
+              case "signResult":
+                this.addSignResult(message);
                 break;
               case "sessionExpired":
                 this.onExpired();
@@ -911,6 +978,45 @@
             this.send({ type: "interval", seconds });
           },
 
+          saveLocation() {
+            const lon = Number(this.lonInput);
+            const lat = Number(this.latInput);
+            if (!isFilledLocation(this.lonInput, this.latInput, lon, lat)) {
+              this.locationHint = "经纬度不合法，请检查范围";
+              return;
+            }
+            localStorage.setItem("wei-class:location", JSON.stringify({ lon, lat }));
+            this.locationHint = "坐标已保存，本轮生效";
+            this.send({ type: "location", lon, lat });
+          },
+
+          sendSavedLocation() {
+            const lon = Number(this.lonInput);
+            const lat = Number(this.latInput);
+            if (!isFilledLocation(this.lonInput, this.latInput, lon, lat)) return;
+            this.send({ type: "location", lon, lat });
+          },
+
+          addSignResult(message) {
+            const mode = message.mode === "gps" ? "定位签到" : "普通签到";
+            const name = message.name || "未命名";
+            let text;
+            if (message.status === "ok") {
+              text = `${mode}成功：${name}`;
+            } else if (message.status === "already") {
+              text = `${mode}已签到：${name}`;
+            } else {
+              const reason = message.reason ? `（${message.reason}）` : "";
+              text = `${mode}失败：${name}${reason}`;
+            }
+            this.signNotice = message.status === "failed" ? text : "";
+            const at = new Date().toLocaleTimeString();
+            this.signResults = [
+              { key: `${message.signId}-${Date.now()}`, text: `${at} ${text}` },
+              ...this.signResults,
+            ].slice(0, 5);
+          },
+
           send(message) {
             if (this.socket && this.socket.readyState === WebSocket.OPEN) {
               this.socket.send(JSON.stringify(message));
@@ -937,6 +1043,8 @@
             this.qr = null;
             this.currentQrUrl = "";
             this.redirecting = "";
+            this.signResults = [];
+            this.signNotice = "";
             this.loginError = "登录已失效，请重新输入 openid";
             clearCookie("openid");
             this.loggedIn = false;
@@ -956,6 +1064,8 @@
             this.congested = false;
             this.closed = false;
             this.intervalHint = "";
+            this.signResults = [];
+            this.signNotice = "";
             this.closeSocket();
           },
 
@@ -980,6 +1090,33 @@
           if (key === name) return rest.join("=");
         }
         return "";
+      }
+
+      function readLocation() {
+        const raw = localStorage.getItem("wei-class:location");
+        if (!raw) return null;
+        try {
+          const value = JSON.parse(raw);
+          if (Number.isFinite(value?.lon) && Number.isFinite(value?.lat)) {
+            return value;
+          }
+        } catch {
+          return null;
+        }
+        return null;
+      }
+
+      function isFilledLocation(lonInput, latInput, lon, lat) {
+        return (
+          String(lonInput) !== "" &&
+          String(latInput) !== "" &&
+          Number.isFinite(lon) &&
+          Number.isFinite(lat) &&
+          lon >= -180 &&
+          lon <= 180 &&
+          lat >= -90 &&
+          lat <= 90
+        );
       }
 
       function setCookie(name, value, days) {
