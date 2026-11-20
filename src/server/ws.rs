@@ -54,6 +54,7 @@ async fn session(socket: WebSocket, state: AppState, openid: String) {
 
     let (interval_tx, interval_rx) = watch::channel(min);
     let (location_tx, location_rx) = watch::channel(None);
+    let (polling_tx, polling_rx) = watch::channel(true);
     let (out_tx, mut out_rx) = mpsc::channel(8);
     let (stop_tx, stop_rx) = oneshot::channel();
     let masked = mask_openid(&openid);
@@ -68,6 +69,7 @@ async fn session(socket: WebSocket, state: AppState, openid: String) {
             out_tx,
             stop_rx,
             location_rx,
+            polling_rx,
             sign_delay: state.config().sign_delay,
         },
     );
@@ -101,6 +103,7 @@ async fn session(socket: WebSocket, state: AppState, openid: String) {
                         min,
                         &interval_tx,
                         &location_tx,
+                        &polling_tx,
                         &mut ws_tx,
                     )
                     .await;
@@ -161,6 +164,7 @@ async fn handle_client_message(
     min: Duration,
     interval_tx: &watch::Sender<Duration>,
     location_tx: &watch::Sender<Option<Coordinates>>,
+    polling_tx: &watch::Sender<bool>,
     ws_tx: &mut SplitSink<WebSocket, Message>,
 ) -> Result<(), axum::Error> {
     match ClientMessage::decode(text) {
@@ -175,6 +179,11 @@ async fn handle_client_message(
             location_tx.send_replace(Some(coords));
             debug!("GPS 坐标已更新");
             Ok(())
+        }
+        Some(ClientMessage::Polling { enabled }) => {
+            polling_tx.send_replace(enabled);
+            debug!(enabled, "轮询开关已更新");
+            send(ws_tx, &ServerMessage::Polling { enabled }).await
         }
         None => {
             debug!(message = %text, "忽略无法识别的上行消息");

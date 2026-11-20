@@ -49,6 +49,17 @@ async fn bodies_for(server: &MockServer, target: &str) -> Vec<Value> {
         .collect()
 }
 
+/// 统计某个路径收到的请求数。
+async fn count_requests(server: &MockServer, target: &str) -> usize {
+    server
+        .received_requests()
+        .await
+        .unwrap_or_default()
+        .iter()
+        .filter(|request| request.url.path() == target)
+        .count()
+}
+
 /// GPS 提交响应：带 `lon` 成功，不带则返回业务错误（模拟有范围限制）。
 struct GpsSignIn;
 
@@ -279,6 +290,53 @@ async fn poller_reports_already_signed_on_305() -> TestResult {
     assert!(
         message.contains(r#""status":"already""#),
         "message = {message}"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn poller_stops_and_resumes_polling() -> TestResult {
+    setup!(upstream, faye, app, GPS_SIGNS, Duration::from_millis(200));
+    let _ = faye;
+    mount_sign_in(&upstream, r#"{"signRank":1,"studentRank":1}"#).await;
+
+    let mut ws = common::connect_ws(&app.ws_url(), Some(COOKIE)).await?;
+    let _status = common::next_text(&mut ws, TIMEOUT).await?;
+
+    // 停止轮询：服务端回显确认。
+    common::send_text(&mut ws, r#"{"type":"polling","enabled":false}"#).await?;
+    let ack = common::next_text(&mut ws, TIMEOUT).await?;
+    let ack = ack.unwrap_or_default();
+    assert!(
+        ack.contains(r#""type":"polling""#) && ack.contains(r#""enabled":false"#),
+        "ack = {ack}"
+    );
+
+    // 等在途的一轮结束，再取基线；之后不应再有 active_signs 请求。
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let base = count_requests(&upstream, ACTIVE_SIGNS).await;
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    assert_eq!(
+        count_requests(&upstream, ACTIVE_SIGNS).await,
+        base,
+        "停止轮询后不应继续查询 active_signs"
+    );
+
+    // 恢复轮询：立即查询并完成自动提交。
+    common::send_text(&mut ws, r#"{"type":"polling","enabled":true}"#).await?;
+    let ack = common::next_text(&mut ws, TIMEOUT).await?;
+    let ack = ack.unwrap_or_default();
+    assert!(ack.contains(r#""enabled":true"#), "ack = {ack}");
+
+    let result = common::next_text(&mut ws, TIMEOUT).await?;
+    let result = result.unwrap_or_default();
+    assert!(
+        result.contains(r#""type":"signResult""#),
+        "result = {result}"
+    );
+    assert!(
+        count_requests(&upstream, ACTIVE_SIGNS).await > base,
+        "恢复后应重新查询"
     );
     Ok(())
 }

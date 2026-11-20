@@ -8,6 +8,7 @@
 //! ```json
 //! {"type":"interval","seconds":5}
 //! {"type":"location","lon":114.440465,"lat":30.517877}
+//! {"type":"polling","enabled":false}
 //! ```
 //!
 //! 下行（服务端 → 浏览器）：
@@ -16,6 +17,7 @@
 //! {"type":"qr","signId":200002,"url":"https://example.test/qr/round2"}
 //! {"type":"closed","signId":200002}
 //! {"type":"congested","signId":200002}
+//! {"type":"polling","enabled":false}
 //! {"type":"sessionExpired"}
 //! {"type":"status","intervalMs":5000,"minIntervalMs":1000}
 //! {"type":"locationRequired","courseId":100001,"signId":200003,"name":"定位签到"}
@@ -45,6 +47,11 @@ pub enum ClientMessage {
         lon: f64,
         /// 纬度。
         lat: f64,
+    },
+    /// 手动开启 / 停止签到轮询：服务端回 [`ServerMessage::Polling`] 确认。
+    Polling {
+        /// `true` 开始轮询，`false` 暂停查询（已订阅的二维码推送不受影响）。
+        enabled: bool,
     },
 }
 
@@ -120,6 +127,11 @@ pub enum ServerMessage {
         #[serde(skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
     },
+    /// 轮询开关确认：客户端上报后回显当前状态。
+    Polling {
+        /// `true` 轮询中，`false` 已暂停。
+        enabled: bool,
+    },
     /// openid 已失效：前端清 cookie 并回到登录态。
     SessionExpired,
     /// 当前生效的轮询间隔与服务端下限：连接建立与间隔变更时下发。
@@ -189,6 +201,12 @@ mod tests {
             Some(r#"{"type":"congested","signId":200002}"#)
         );
         assert_eq!(
+            ServerMessage::Polling { enabled: false }
+                .encode()
+                .as_deref(),
+            Some(r#"{"type":"polling","enabled":false}"#)
+        );
+        assert_eq!(
             ServerMessage::SessionExpired.encode().as_deref(),
             Some(r#"{"type":"sessionExpired"}"#)
         );
@@ -250,6 +268,14 @@ mod tests {
     }
 
     #[test]
+    fn polling_message_parses_switch() {
+        assert_eq!(
+            ClientMessage::decode(r#"{"type":"polling","enabled":false}"#),
+            Some(ClientMessage::Polling { enabled: false })
+        );
+    }
+
+    #[test]
     fn unknown_messages_are_rejected() {
         assert_eq!(ClientMessage::decode(r#"{"type":"nope"}"#), None);
         assert_eq!(ClientMessage::decode("not json"), None);
@@ -277,6 +303,7 @@ mod tests {
                 status: SignStatus::Already,
                 reason: None,
             },
+            ServerMessage::Polling { enabled: true },
             ServerMessage::SessionExpired,
             ServerMessage::status(2_000, 1_000),
         ] {

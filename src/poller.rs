@@ -44,6 +44,8 @@ pub struct Deps {
     pub stop_rx: oneshot::Receiver<()>,
     /// 当前 GPS 坐标（浏览器热更新）。
     pub location_rx: watch::Receiver<Option<Coordinates>>,
+    /// 轮询开关：`false` 时暂停查询，`true` 时恢复并立即查询一轮。
+    pub polling_rx: watch::Receiver<bool>,
     /// 非二维码签到提交前的基准延迟。
     pub sign_delay: Duration,
 }
@@ -54,6 +56,9 @@ pub struct Deps {
 /// 未配置坐标时先尝试无坐标提交，业务失败后再发 [`ServerMessage::LocationRequired`]。
 ///
 /// 退出条件：会话结束（[`Deps::stop_rx`]）、faye 通道关闭、openid 失效。
+// 轮询主状态机：暂停 / 等坐标 / 停止轮询 / 恢复四类分支集中在一处，
+// 拆散会削弱时序可读性；单测已覆盖各分支。
+#[allow(clippy::too_many_lines)]
 pub async fn run_loop<Q, Fut, S, SFut>(deps: Deps, mut query: Q, mut submit: S)
 where
     Q: FnMut() -> Fut,
@@ -69,6 +74,7 @@ where
         out_tx,
         mut stop_rx,
         mut location_rx,
+        mut polling_rx,
         sign_delay,
     } = deps;
     let mut round: u32 = 0;
@@ -76,6 +82,24 @@ where
     let mut force_poll = false;
 
     loop {
+        // 手动停止轮询：不再查询 active_signs，等待恢复或会话结束。
+        if !*polling_rx.borrow_and_update() {
+            debug!("轮询已停止，等待恢复");
+            tokio::select! {
+                changed = polling_rx.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                    force_poll = *polling_rx.borrow();
+                    continue;
+                }
+                _ = &mut stop_rx => {
+                    debug!("会话结束，轮询退出");
+                    return;
+                }
+            }
+        }
+
         let forced = std::mem::take(&mut force_poll);
         // 已监听到二维码：暂停轮询，等待签到关闭（订阅清空）或会话结束。
         // 坐标更新时强制查询一轮，避免「填了坐标但轮询已暂停」的卡死。
@@ -93,6 +117,13 @@ where
                         return;
                     }
                     force_poll = true;
+                    continue;
+                }
+                changed = polling_rx.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                    force_poll = *polling_rx.borrow_and_update();
                     continue;
                 }
                 _ = &mut stop_rx => {
@@ -120,6 +151,14 @@ where
                         return;
                     }
                     force_poll = true;
+                    continue;
+                }
+                // 轮询开关：停止时回到顶部等待，恢复时立即查询一轮。
+                changed = polling_rx.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                    force_poll = *polling_rx.borrow_and_update();
                     continue;
                 }
                 _ = &mut stop_rx => {
@@ -467,12 +506,14 @@ mod tests {
         watch::Sender<bool>,
         oneshot::Sender<()>,
         watch::Sender<Option<Coordinates>>,
+        watch::Sender<bool>,
     ) {
         let (faye_tx, faye_rx) = mpsc::channel(16);
         let (out_tx, out_rx) = mpsc::channel(4);
         let (interval_tx, interval_rx) = watch::channel(min);
         let (sub_tx, sub_rx) = watch::channel(false);
         let (location_tx, location_rx) = watch::channel(None);
+        let (polling_tx, polling_rx) = watch::channel(true);
         let (stop_tx, stop_rx) = oneshot::channel();
         (
             Deps {
@@ -483,6 +524,7 @@ mod tests {
                 out_tx,
                 stop_rx,
                 location_rx,
+                polling_rx,
                 sign_delay: Duration::ZERO,
             },
             faye_rx,
@@ -491,6 +533,7 @@ mod tests {
             sub_tx,
             stop_tx,
             location_tx,
+            polling_tx,
         )
     }
 
@@ -564,7 +607,8 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn interval_update_applies_from_next_round() -> TestResult {
         let min = Duration::from_secs(1);
-        let (deps, _faye_rx, _out_rx, interval_tx, _sub_tx, _stop_tx, _location_tx) = deps_of(min);
+        let (deps, _faye_rx, _out_rx, interval_tx, _sub_tx, _stop_tx, _location_tx, _polling_tx) =
+            deps_of(min);
         let calls = Arc::new(AtomicUsize::new(0));
         let handle = start(deps, counting(Arc::clone(&calls), Vec::new()), accept).await;
 
@@ -590,7 +634,8 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn reported_interval_below_minimum_is_clamped() -> TestResult {
         let min = Duration::from_secs(1);
-        let (deps, _faye_rx, _out_rx, interval_tx, _sub_tx, _stop_tx, _location_tx) = deps_of(min);
+        let (deps, _faye_rx, _out_rx, interval_tx, _sub_tx, _stop_tx, _location_tx, _polling_tx) =
+            deps_of(min);
         interval_tx.send_replace(Duration::from_millis(200));
         let calls = Arc::new(AtomicUsize::new(0));
         let handle = start(deps, counting(Arc::clone(&calls), Vec::new()), accept).await;
@@ -610,8 +655,16 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn qr_is_subscribed_while_gps_is_submitted() -> TestResult {
         let min = Duration::from_secs(1);
-        let (deps, mut faye_rx, _out_rx, _interval_tx, _sub_tx, _stop_tx, _location_tx) =
-            deps_of(min);
+        let (
+            deps,
+            mut faye_rx,
+            _out_rx,
+            _interval_tx,
+            _sub_tx,
+            _stop_tx,
+            _location_tx,
+            _polling_tx,
+        ) = deps_of(min);
         let submitted = Arc::new(Mutex::new(Vec::new()));
         let recorder = {
             let submitted = Arc::clone(&submitted);
@@ -658,7 +711,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn poller_pauses_while_subscribed_and_resumes_after_unsubscribe() -> TestResult {
         let min = Duration::from_secs(1);
-        let (deps, mut faye_rx, _out_rx, _interval_tx, sub_tx, _stop_tx, _location_tx) =
+        let (deps, mut faye_rx, _out_rx, _interval_tx, sub_tx, _stop_tx, _location_tx, _polling_tx) =
             deps_of(min);
         let calls = Arc::new(AtomicUsize::new(0));
         let handle = start(
@@ -707,8 +760,16 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn token_invalid_pushes_session_expired_and_stops() -> TestResult {
         let min = Duration::from_secs(1);
-        let (deps, _faye_rx, mut out_rx, _interval_tx, _sub_tx, _stop_tx, _location_tx) =
-            deps_of(min);
+        let (
+            deps,
+            _faye_rx,
+            mut out_rx,
+            _interval_tx,
+            _sub_tx,
+            _stop_tx,
+            _location_tx,
+            _polling_tx,
+        ) = deps_of(min);
         let handle = start(
             deps,
             counting(
@@ -731,8 +792,16 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn network_error_skips_round_and_continues() -> TestResult {
         let min = Duration::from_secs(1);
-        let (deps, _faye_rx, mut out_rx, _interval_tx, _sub_tx, _stop_tx, _location_tx) =
-            deps_of(min);
+        let (
+            deps,
+            _faye_rx,
+            mut out_rx,
+            _interval_tx,
+            _sub_tx,
+            _stop_tx,
+            _location_tx,
+            _polling_tx,
+        ) = deps_of(min);
         let calls = Arc::new(AtomicUsize::new(0));
         let handle = start(
             deps,
@@ -765,7 +834,8 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn session_close_stops_polling() -> TestResult {
         let min = Duration::from_secs(1);
-        let (deps, _faye_rx, _out_rx, _interval_tx, _sub_tx, stop_tx, _location_tx) = deps_of(min);
+        let (deps, _faye_rx, _out_rx, _interval_tx, _sub_tx, stop_tx, _location_tx, _polling_tx) =
+            deps_of(min);
         let handle = start(
             deps,
             counting(Arc::new(AtomicUsize::new(0)), Vec::new()),
@@ -781,7 +851,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn gps_without_location_requests_coordinates_then_retries() -> TestResult {
         let min = Duration::from_secs(1);
-        let (deps, _faye_rx, mut out_rx, _interval_tx, _sub_tx, _stop_tx, location_tx) =
+        let (deps, _faye_rx, mut out_rx, _interval_tx, _sub_tx, _stop_tx, location_tx, _polling_tx) =
             deps_of(min);
         let submitted = Arc::new(Mutex::new(Vec::new()));
         let recorder = {
@@ -869,7 +939,8 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn signed_sign_is_not_resubmitted() -> TestResult {
         let min = Duration::from_secs(1);
-        let (deps, _faye_rx, _out_rx, _interval_tx, _sub_tx, _stop_tx, location_tx) = deps_of(min);
+        let (deps, _faye_rx, _out_rx, _interval_tx, _sub_tx, _stop_tx, location_tx, _polling_tx) =
+            deps_of(min);
         location_tx.send_replace(Some(Coordinates {
             lon: 114.440_465,
             lat: 30.517_877,
@@ -919,7 +990,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn location_change_while_paused_forces_one_poll() -> TestResult {
         let min = Duration::from_secs(1);
-        let (deps, _faye_rx, mut out_rx, _interval_tx, sub_tx, _stop_tx, location_tx) =
+        let (deps, _faye_rx, mut out_rx, _interval_tx, sub_tx, _stop_tx, location_tx, _polling_tx) =
             deps_of(min);
         // 模拟已订阅二维码：Poller 进入暂停。
         sub_tx.send_replace(true);
@@ -952,6 +1023,33 @@ mod tests {
             ),
             "result = {result:?}"
         );
+        handle.abort();
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn polling_stop_pauses_queries_and_resume_forces_poll() -> TestResult {
+        let min = Duration::from_secs(1);
+        let (deps, _faye_rx, _out_rx, _interval_tx, _sub_tx, _stop_tx, _location_tx, polling_tx) =
+            deps_of(min);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let handle = start(deps, counting(Arc::clone(&calls), Vec::new()), accept).await;
+
+        tokio::time::advance(Duration::from_secs(1)).await;
+        settle().await;
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        // 停止轮询：后续 sleep 到期也不查询。
+        polling_tx.send_replace(false);
+        tokio::time::advance(Duration::from_secs(3)).await;
+        settle().await;
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "停止后不应继续查询");
+
+        // 恢复：立即查询一轮，无需等待间隔。
+        polling_tx.send_replace(true);
+        settle().await;
+        settle().await;
+        assert_eq!(calls.load(Ordering::SeqCst), 2, "恢复后应立即查询");
         handle.abort();
         Ok(())
     }
