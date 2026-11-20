@@ -7,6 +7,7 @@
 //!
 //! ```json
 //! {"type":"interval","seconds":5}
+//! {"type":"location","lon":114.440465,"lat":30.517877}
 //! ```
 //!
 //! 下行（服务端 → 浏览器）：
@@ -17,12 +18,16 @@
 //! {"type":"congested","signId":200002}
 //! {"type":"sessionExpired"}
 //! {"type":"status","intervalMs":5000,"minIntervalMs":1000}
+//! {"type":"locationRequired","courseId":100001,"signId":200003,"name":"定位签到"}
+//! {"type":"signResult","courseId":100001,"signId":200003,"name":"定位签到","mode":"gps","status":"ok"}
 //! ```
 
 use serde::{Deserialize, Serialize};
 
 /// 浏览器上行消息。
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+///
+/// 注意：包含 `f64` 坐标，不能派生 `Eq`。
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(
     tag = "type",
     rename_all = "camelCase",
@@ -34,6 +39,35 @@ pub enum ClientMessage {
         /// 期望的轮询间隔秒数（低于服务端下限的值将被钳制）。
         seconds: u64,
     },
+    /// 上报 GPS 坐标（GCJ-02）。
+    Location {
+        /// 经度。
+        lon: f64,
+        /// 纬度。
+        lat: f64,
+    },
+}
+
+/// 普通 / GPS 签到模式。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SignMode {
+    /// GPS 签到。
+    Gps,
+    /// 普通签到。
+    Normal,
+}
+
+/// 自动签到结果状态。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SignStatus {
+    /// 提交成功。
+    Ok,
+    /// 已经签到过（上游 305）。
+    Already,
+    /// 提交失败。
+    Failed,
 }
 
 /// 服务端下行消息。
@@ -60,6 +94,31 @@ pub enum ServerMessage {
     Congested {
         /// 签到 ID。
         sign_id: i64,
+    },
+    /// GPS 签到缺坐标且提交失败：前端提示用户填写坐标。
+    LocationRequired {
+        /// 课程 ID。
+        course_id: i64,
+        /// 签到 ID。
+        sign_id: i64,
+        /// 签到名称。
+        name: String,
+    },
+    /// 普通 / GPS 自动签到结果。
+    SignResult {
+        /// 课程 ID。
+        course_id: i64,
+        /// 签到 ID。
+        sign_id: i64,
+        /// 签到名称。
+        name: String,
+        /// 签到模式。
+        mode: SignMode,
+        /// 结果状态。
+        status: SignStatus,
+        /// 失败原因（仅 `status == Failed`）。
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
     },
     /// openid 已失效：前端清 cookie 并回到登录态。
     SessionExpired,
@@ -137,6 +196,31 @@ mod tests {
             ServerMessage::status(5_000, 1_000).encode().as_deref(),
             Some(r#"{"type":"status","intervalMs":5000,"minIntervalMs":1000}"#)
         );
+        assert_eq!(
+            ServerMessage::LocationRequired {
+                course_id: 100_001,
+                sign_id: 200_003,
+                name: String::from("test"),
+            }
+            .encode()
+            .as_deref(),
+            Some(r#"{"type":"locationRequired","courseId":100001,"signId":200003,"name":"test"}"#)
+        );
+        assert_eq!(
+            ServerMessage::SignResult {
+                course_id: 100_001,
+                sign_id: 200_003,
+                name: String::from("test"),
+                mode: SignMode::Gps,
+                status: SignStatus::Ok,
+                reason: None,
+            }
+            .encode()
+            .as_deref(),
+            Some(
+                r#"{"type":"signResult","courseId":100001,"signId":200003,"name":"test","mode":"gps","status":"ok"}"#
+            )
+        );
     }
 
     #[test]
@@ -155,6 +239,17 @@ mod tests {
     }
 
     #[test]
+    fn location_message_parses_coordinates() {
+        assert_eq!(
+            ClientMessage::decode(r#"{"type":"location","lon":114.440465,"lat":30.517877}"#),
+            Some(ClientMessage::Location {
+                lon: 114.440_465,
+                lat: 30.517_877,
+            })
+        );
+    }
+
+    #[test]
     fn unknown_messages_are_rejected() {
         assert_eq!(ClientMessage::decode(r#"{"type":"nope"}"#), None);
         assert_eq!(ClientMessage::decode("not json"), None);
@@ -169,6 +264,19 @@ mod tests {
             },
             ServerMessage::Closed { sign_id: 2 },
             ServerMessage::Congested { sign_id: 3 },
+            ServerMessage::LocationRequired {
+                course_id: 1,
+                sign_id: 2,
+                name: String::from("n"),
+            },
+            ServerMessage::SignResult {
+                course_id: 1,
+                sign_id: 2,
+                name: String::from("n"),
+                mode: SignMode::Normal,
+                status: SignStatus::Already,
+                reason: None,
+            },
             ServerMessage::SessionExpired,
             ServerMessage::status(2_000, 1_000),
         ] {

@@ -20,6 +20,7 @@ use tracing::{Instrument, debug, info, info_span, warn};
 
 use super::AppState;
 use super::cookie::{mask_openid, parse as parse_openid};
+use crate::api::Coordinates;
 use crate::faye::client::Event;
 use crate::poller::{Deps, Poller, clamp};
 use crate::protocol::{ClientMessage, ServerMessage};
@@ -52,6 +53,7 @@ async fn session(socket: WebSocket, state: AppState, openid: String) {
     let min = state.config().min_poll_interval;
 
     let (interval_tx, interval_rx) = watch::channel(min);
+    let (location_tx, location_rx) = watch::channel(None);
     let (out_tx, mut out_rx) = mpsc::channel(8);
     let (stop_tx, stop_rx) = oneshot::channel();
     let masked = mask_openid(&openid);
@@ -65,6 +67,8 @@ async fn session(socket: WebSocket, state: AppState, openid: String) {
             faye_tx: lease.command().clone(),
             out_tx,
             stop_rx,
+            location_rx,
+            sign_delay: state.config().sign_delay,
         },
     );
     let poller_span = info_span!("poller", user = %masked);
@@ -92,7 +96,14 @@ async fn session(socket: WebSocket, state: AppState, openid: String) {
             }
             inbound = ws_rx.next() => match inbound {
                 Some(Ok(Message::Text(text))) => {
-                    let outcome = report_interval(&text, min, &interval_tx, &mut ws_tx).await;
+                    let outcome = handle_client_message(
+                        &text,
+                        min,
+                        &interval_tx,
+                        &location_tx,
+                        &mut ws_tx,
+                    )
+                    .await;
                     if outcome.is_err() {
                         break;
                     }
@@ -144,19 +155,43 @@ async fn expired(mut socket: WebSocket) {
     let _ = socket.close().await;
 }
 
+/// 处理上行消息：`interval` 更新轮询间隔，`location` 更新 GPS 坐标。
+async fn handle_client_message(
+    text: &str,
+    min: Duration,
+    interval_tx: &watch::Sender<Duration>,
+    location_tx: &watch::Sender<Option<Coordinates>>,
+    ws_tx: &mut SplitSink<WebSocket, Message>,
+) -> Result<(), axum::Error> {
+    match ClientMessage::decode(text) {
+        Some(ClientMessage::Interval { seconds }) => {
+            report_interval(seconds, min, interval_tx, ws_tx).await
+        }
+        Some(ClientMessage::Location { lon, lat }) => {
+            let Some(coords) = Coordinates::new(lon, lat) else {
+                debug!("忽略非法 GPS 坐标");
+                return Ok(());
+            };
+            location_tx.send_replace(Some(coords));
+            debug!("GPS 坐标已更新");
+            Ok(())
+        }
+        None => {
+            debug!(message = %text, "忽略无法识别的上行消息");
+            Ok(())
+        }
+    }
+}
+
 /// 处理上行 `interval`：写入 `watch` 通道并回 `Status` 确认钳制后的值。
 ///
 /// 钳制规则与 Poller 的读取点共用 [`clamp`]，回显值即下轮实际生效值。
 async fn report_interval(
-    text: &str,
+    seconds: u64,
     min: Duration,
     interval_tx: &watch::Sender<Duration>,
     ws_tx: &mut SplitSink<WebSocket, Message>,
 ) -> Result<(), axum::Error> {
-    let Some(ClientMessage::Interval { seconds }) = ClientMessage::decode(text) else {
-        debug!(message = %text, "忽略无法识别的上行消息");
-        return Ok(());
-    };
     let requested = Duration::from_secs(seconds);
     interval_tx.send_replace(requested);
     let effective = clamp(requested, min);
