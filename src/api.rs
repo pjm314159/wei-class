@@ -109,8 +109,8 @@ impl Coordinates {
         let step = u16::try_from(state % 1_000).unwrap_or(0);
         let offset = f64::from(step) * 0.000_04 / 999.0 - 0.000_02;
         Self {
-            lon: round5(self.lon + offset),
-            lat: round5(self.lat - offset),
+            lon: round5(self.lon + offset).clamp(-180.0, 180.0),
+            lat: round5(self.lat - offset).clamp(-90.0, 90.0),
         }
     }
 }

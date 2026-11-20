@@ -349,7 +349,7 @@ fn jittered_delay(base: Duration, sign_id: i64, round: u32) -> Duration {
         return base;
     }
     let seed = sign_id.unsigned_abs() ^ u64::from(round).wrapping_mul(0x9E37_79B9_7F4A_7C15);
-    base + Duration::from_millis(seed % 1_001)
+    base.saturating_add(Duration::from_millis(seed % 1_001))
 }
 
 /// 等待提交延迟；会话结束时返回 `false`。
