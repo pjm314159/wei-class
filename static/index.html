@@ -276,45 +276,17 @@
         margin: 4px 0 0;
       }
 
-      /* 轮询开关 */
-      .poll-row {
+      /* 轮询开关：与状态胶囊同一行 */
+      .qr-actions {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        margin-top: 14px;
-        padding-top: 14px;
-        border-top: 1px dashed var(--border);
+        gap: 10px;
+        white-space: nowrap;
       }
 
-      .poll-state {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        color: var(--ok);
-        font-size: 13px;
-        font-weight: 600;
-      }
-
-      .poll-state.off {
-        color: var(--warn);
-      }
-
-      .poll-state .dot {
-        width: 7px;
-        height: 7px;
-        border-radius: 50%;
-        background: currentColor;
-        animation: breathe 1.8s ease-in-out infinite;
-      }
-
-      .poll-state.off .dot {
-        animation: none;
-        opacity: 0.7;
-      }
-
-      .poll-row .btn {
+      .qr-actions .btn {
         margin-top: 0;
+        padding: 6px 12px;
       }
 
       /* 签到结果提示框 */
@@ -761,20 +733,15 @@
               <i class="dot"></i>
               <span x-text="statusText"></span>
             </span>
-            <span class="meta" x-text="limitText"></span>
-          </div>
-
-          <div class="poll-row">
-            <span class="poll-state" :class="polling ? 'on' : 'off'">
-              <i class="dot"></i>
-              <span x-text="polling ? '签到轮询中' : '签到轮询已停止'"></span>
-            </span>
-            <button
-              class="btn btn-ghost btn-sm"
-              type="button"
-              @click="togglePolling()"
-              x-text="polling ? '停止轮询' : '开始轮询'"
-            ></button>
+            <div class="qr-actions">
+              <span class="meta" x-text="limitText"></span>
+              <button
+                class="btn btn-ghost btn-sm"
+                type="button"
+                @click="togglePolling()"
+                x-text="polling ? '停止轮询' : '开始轮询'"
+              ></button>
+            </div>
           </div>
 
           <template x-if="showQrArea">
