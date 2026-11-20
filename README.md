@@ -6,9 +6,14 @@
 [![CI](https://github.com/pjm314159/wei-class/actions/workflows/ci.yml/badge.svg)](https://github.com/pjm314159/wei-class/actions/workflows/ci.yml)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
-## 项目状态
+## 功能特点
 
-核心链路已贯通（配置 → faye 单例 → 微助教 API → axum 服务 → 签到轮询 → 前端页面），部署与 CI 增量推进中，接口仍可能微调。
+- **Rust 编写**：Tokio + axum 异步运行时，发布构建为静态二进制，无运行时依赖。
+- **单文件部署**：前端页面、脚本与图标全部内嵌，一个二进制即可运行。
+- **零持久化**：openid 只存浏览器 2h cookie，轮询间隔与 GPS 坐标存 localStorage；服务端不落盘，重启无损。
+- **低占用**：常驻内存约十几 MB，单连接增量 KB 级，1 核小机器即可运行。
+- **全部签到类型**：二维码签到实时推送，GPS 签到与普通签到自动提交。
+- **实时与自愈**：浏览器 ↔ 服务端 WebSocket；faye 断线指数退避重连并重放订阅。
 
 ## 功能规划
 
@@ -36,11 +41,10 @@ cargo run
 .
 ├── .github/    # CI 工作流、PR / Issue 模板
 ├── docs/       # 工程规范文档
-├── src/        # 源码（重写中）
-├── static/     # 前端单文件静态页（Alpine.js，零构建）
+├── src/        # Rust 源码
+├── static/     # 前端静态页（Alpine.js，零构建，编译期内嵌）
 ├── Dockerfile  # cargo-chef 多阶段 → musl 静态二进制 → distroless
-├── docker-compose.yml / nginx.conf  # 部署编排与反向代理
-└── old/        # 旧版参考实现（不入库，本地保留）
+└── docker-compose.yml / nginx.conf  # 部署编排与反向代理
 ```
 
 ## 开发指南
