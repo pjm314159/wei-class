@@ -6,14 +6,21 @@
 [![CI](https://github.com/pjm314159/wei-class/actions/workflows/ci.yml/badge.svg)](https://github.com/pjm314159/wei-class/actions/workflows/ci.yml)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
-## 项目状态
+## 功能特点
 
-核心链路已贯通（配置 → faye 单例 → 微助教 API → axum 服务 → 签到轮询 → 前端页面），部署与 CI 增量推进中，接口仍可能微调。
+- **Rust 编写**：Tokio + axum 异步运行时，发布构建为静态二进制，无运行时依赖。
+- **单文件部署**：前端页面、脚本与图标全部内嵌，一个二进制即可运行。
+- **零持久化**：openid 只存浏览器 2h cookie，轮询间隔与 GPS 坐标存 localStorage；服务端不落盘，重启无损。
+- **低占用**：常驻内存约十几 MB，单连接增量 KB 级，1 核小机器即可运行。
+- **全部签到类型**：二维码签到实时推送，GPS 签到与普通签到自动提交。
+- **实时与自愈**：浏览器 ↔ 服务端 WebSocket；faye 断线指数退避重连并重放订阅。
 
 ## 功能规划
 
 - [x] 身份接入（openid）
-- [x] 签到核心流程
+- [x] 二维码签到（faye 实时推送）
+- [x] 普通签到自动提交
+- [x] GPS 签到自动提交（坐标可在页面配置）
 - [x] 实时通信（WebSocket）
 - [x] Web 服务与前端页面
 
@@ -34,11 +41,10 @@ cargo run
 .
 ├── .github/    # CI 工作流、PR / Issue 模板
 ├── docs/       # 工程规范文档
-├── src/        # 源码（重写中）
-├── static/     # 前端单文件静态页（Alpine.js，零构建）
+├── src/        # Rust 源码
+├── static/     # 前端静态页（Alpine.js，零构建，编译期内嵌）
 ├── Dockerfile  # cargo-chef 多阶段 → musl 静态二进制 → distroless
-├── docker-compose.yml / nginx.conf  # 部署编排与反向代理
-└── old/        # 旧版参考实现（不入库，本地保留）
+└── docker-compose.yml / nginx.conf  # 部署编排与反向代理
 ```
 
 ## 开发指南
@@ -67,6 +73,11 @@ cargo test
 5. 改间隔：修改轮询间隔即时上报；低于服务端下限的值被上调并提示
 6. 失效：openid 失效时收到 `sessionExpired` → 自动清除 cookie 并回到登录态
 7. 其他：`/usage` 使用说明页、右上角深浅色主题切换、favicon
+8. 普通签到：教师开启普通签到后，页面显示「普通签到成功」，同一签到不重复提交
+9. GPS 签到（已配置坐标）：填写经纬度并保存后，页面显示「定位签到成功」
+10. GPS 签到（未配置坐标）：先尝试无坐标提交；失败后提示填写坐标，保存后自动补提交
+11. 轮询开关：点击「停止轮询」后不再查询 `active_signs`，按钮变为「开始轮询」；恢复后立即查询并自动签到
+12. 成功提示：签到成功时顶部弹出绿色提示框（可手动关闭，4.5s 自动消失）；失败为红色提示框
 
 前端门禁：`npx @biomejs/biome ci static/`（依赖已本地化到 `static/vendor/`，无 CDN）。
 

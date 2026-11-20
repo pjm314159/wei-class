@@ -1,16 +1,17 @@
-# DESIGN：微助教二维码签到工具
+# DESIGN：微助教签到工具
 
-> 状态：定稿。协议行为均经 2026-10-08 实测确认（见 §2）。
+> 状态：定稿。协议行为均经 2026-10-08 / 2026-11-20 实测确认（见 §2）。
 > 存储模型：**零持久化**。所有用户数据由客户端持有，服务端内存中仅存在活跃连接的临时状态。
 
 ## 1. 目标
 
-学生端在教师开启二维码签到后，**最快拿到可扫码的 qrUrl 并持续跟进轮换**。核心手段：
+学生端在教师开启签到后，**二维码签到最快拿到 qrUrl 并持续跟进轮换，普通 / GPS 签到自动提交**。核心手段：
 
 - **Faye 连接预建**：WebSocket 握手不等待签到出现，进程内有活跃连接时即保持就绪，签到出现后零 RTT 订阅。
+- **自动提交**：`active_signs` 中 `isQR == 0` 的签到直接 POST `student-sign-in`；GPS 使用浏览器上报的坐标，未配置坐标时先尝试无坐标提交，失败再提示补填。
 - **全局单连接**：服务端到微助教只维护一条 faye WebSocket，承载所有连接、所有签到的订阅。
 - **按需启停**：活跃连接数归零即断开 faye 连接；再次有连接时全新预建。
-- **零存储**：openid 在浏览器 cookie（2h 过期），轮询间隔在浏览器 localStorage（永久）；服务端不落盘、不持久化任何用户数据，重启无损。
+- **零存储**：openid 在浏览器 cookie（2h 过期），轮询间隔与 GPS 坐标在浏览器 localStorage；服务端不落盘、不持久化任何用户数据，重启无损。
 
 结构性事实（不可突破）：第 1 轮 qrUrl 仅存在于教师端创建签到响应，频道从不广播；学生端最早可得的是创建后 **T0+10s** 的第 2 轮。本设计保证订阅永远落在第一个 10s 窗口内。
 
@@ -43,6 +44,16 @@
 - 频道**无 retain 语义**：订阅成功不立即推送"当前二维码"，只等下一个节拍点；错过即整轮错过，不补发。
 - 推论：订阅只要落在 T0+10s 内，首条可得时间相同；每跨过一个边界推迟 10s。
 
+### 2.4 普通 / GPS 签到提交（2026-11-20 实测）
+
+- 类型由 `active_signs` 下发：`isQR != 0` 为二维码；`isQR == 0 && isGPS != 0` 为 GPS；其余为普通。
+- 提交端点与二维码频道不同，为 `POST /wechat-api/v1/class-attendance/student-sign-in`，`Content-Type: application/json`，鉴权头 `openId`。
+- Body：`{"courseId":..., "signId":...}`；GPS 追加 `lon`/`lat`（5 位小数）。
+- 成功响应无 `errorCode`，形如 `{"signRank":33,"studentRank":1}`；**无 `errorCode` / `errorCode=0` 即成功**。
+- 重复提交返回 `{"errorCode":305,"msg":"repeat sign in","msgClient":"你已经签到成功"}`，按「已签到」处理。
+- 实测无范围限制的 GPS 签到可省略 `lon`/`lat`；有范围限制时必须携带。
+- **签到后 `active_signs` 仍会返回该条**，服务端不提供"已签"状态，客户端必须自行去重。
+
 ## 3. 总体架构
 
 ```mermaid
@@ -53,7 +64,7 @@ flowchart LR
     subgraph C["docker compose"]
         NG["nginx:stable-alpine\n自有 TLS 证书 (volume 挂载)"]
         subgraph A["axum 服务端（零持久化）"]
-            S["每连接 task\nSignPoller + 推送通道\nlive_count: AtomicUsize"]
+            S["每连接 task\nSignPoller + 普通/GPS 自动提交\n推送通道 / live_count"]
             F["FayeClient 单例\n订阅表 / 心跳 / 自愈"]
         end
     end
@@ -61,6 +72,7 @@ flowchart LR
 
     UI -- "HTTPS / WSS" --> NG --> S
     S -- "Command: Subscribe / Shutdown" --> F
+    S -- "POST student-sign-in（GPS/普通）" --> TM
     F -- "WSS 握手 + 心跳 5s" --> TM
     TM -- "type:1/2/3 推送" --> F
     F -- "Event 广播给各连接" --> S
@@ -104,28 +116,50 @@ stateDiagram-v2
 
 ```rust
 loop {
-    if subscribed {                       // 已监听到二维码（订阅表非空）
-        wait_until_unsubscribed().await;  // 暂停轮询：type:2 退订后恢复
-        continue;
+    if subscribed && !force_poll {        // 已监听到二维码（订阅表非空）
+        select! {
+            unsubscribe -> continue,
+            // 坐标更新：强制查询一轮，补提交已发现的 GPS 签到
+            location_changed -> { force_poll = true; continue; }
+        }
     }
-    let interval = interval_rx.borrow_and_update().max(cfg.min_poll_interval); // .env 边界钳制
-    tokio::time::sleep(interval).await;
+    if !force_poll {
+        let interval = interval_rx.borrow_and_update().max(cfg.min_poll_interval); // .env 边界钳制
+        sleep(interval).await;            // 期间坐标变化也会置位 force_poll
+    }
     match query_active_signs(openid).await {
         Ok(signs) => {
-            for s in signs.iter().filter(|s| s.is_qr) {
-                faye_tx.send(Command::Subscribe { course_id: s.course_id, sign_id: s.sign_id })?;
+            // 1) 二维码优先：订阅必须在 T0+10s 窗口内离机
+            for s in signs.iter().filter(|s| s.kind() == SignKind::Qr) {
+                faye_tx.send(Command::Subscribe { .. })?;
+            }
+            // 2) 非二维码：自动提交（常开，无开关）
+            for s in signs.iter().filter(|s| s.kind() != SignKind::Qr) {
+                if processed.contains(&key(s)) { continue; }
+                let coords = location_rx.borrow().copied();
+                let outcome = submit_with_delay(s, coords).await;
+                if s.kind() == Gps && coords.is_none() && outcome == Rejected {
+                    // 不登记 processed；提示一次，用户补坐标后由 force_poll 重试
+                    out_tx.send(LocationRequired { .. }).await?;
+                }
             }
         }
-        Err(TokenInvalid) => ws_tx.send(Out::SessionExpired).await?, // 前端清理 cookie 并断开
-        Err(Network) => continue,                                    // 本轮放弃，下轮重试
+        Err(TokenInvalid) => out_tx.send(SessionExpired).await?, // 前端清理 cookie 并断开
+        Err(Network) => continue,                                // 本轮放弃，下轮重试
     }
 }
 ```
 
 - **订阅后暂停轮询**（2026-10-09 产品决策）：监听到二维码后不再查询 `active_signs`（省 API、避风控）；
   收到 `type:2`（签到关闭）退订、订阅表清空后恢复轮询。代价：监听 A 课期间不会发现 B 课新开的签。
+- **普通 / GPS 自动提交**（2026-11-20 产品决策）：常开，无前端关闭入口；普通签到只提交 `courseId/signId`，GPS 追加坐标。
+- **GPS 坐标**：浏览器通过 `WS ↑ {type:"location", lon, lat}` 上报，存在连接级 `watch` 中。未配置时先尝试无坐标提交（无范围限制的签到可成功）；业务失败后再下发 `locationRequired`，用户补坐标后重试。
+- **坐标热更新**：坐标变化会把 `force_poll` 置位，跳过当前 sleep（即使处于二维码暂停期）立即查询一轮；完成后若订阅表仍非空，恢复暂停。
+- **手动轮询开关**（2026-11-20）：前端按钮通过 `WS ↑ {type:"polling", enabled}` 控制；`false` 时 Poller 停止查询并等待，`true` 时置 `force_poll` 立即查询一轮。已订阅的二维码推送不受影响。
+- **去重**：Poller 维护 `HashSet<(courseId, signId)>`（成功 / 已签到 / 终结失败），不依赖 `active_signs` 列表消失（实测签到后仍会返回）。
+- **重试**：网络错误最多 3 轮；业务错误不重试。提交前有 `SIGN_DELAY_MS` 延迟（默认 5s）与抖动，避免签到排名过于靠前。
 - 轮询间隔**以轮为单位读取**：客户端改值最迟在当前 sleep 结束后生效——即热更新。
-- 发现去重依赖 FayeClient 订阅表（§4），Poller 无状态。
+- 发现去重依赖 FayeClient 订阅表（§4）；非二维码去重依赖 Poller 的本地集合。
 - Poller 启动与 FayeClient 启动**并行**：即使首个签到在预建连完成前被发现，`Subscribe` 也在单例内排队，连接就绪后立即补发。
 
 ## 6. 服务端 ↔ 浏览器接口
@@ -134,13 +168,15 @@ loop {
 |------|------|------|
 | `GET /` | HTTP | 静态页（单文件 HTML + Alpine.js） |
 | `POST /api/login` | HTTP | body `{openid}` → 校验一次 `active_signs` → 签发 2h cookie；失败返回原因 |
-| `WS /ws` | WS | 建立即会话开始；服务端推 `Qr` / `Closed` / `Congested` / `SessionExpired` / `Status` |
+| `WS /ws` | WS | 建立即会话开始；服务端推 `Qr` / `Closed` / `Congested` / `SessionExpired` / `Status` / `Polling` / `LocationRequired` / `SignResult` |
 | `WS ↑ {type:"interval", seconds}` | WS | 客户端指定轮询间隔（任意时刻可改发，热更新；服务端按 `.env` 边界钳制） |
+| `WS ↑ {type:"location", lon, lat}` | WS | 客户端上报 GPS 坐标（GCJ-02）；存在连接级内存，不落盘 |
+| `WS ↑ {type:"polling", enabled}` | WS | 手动开始 / 停止签到轮询；服务端回 `Polling` 确认 |
 | 保活 | WS | 服务端每 30s 发 ping 帧，防反代/浏览器空闲断开 |
 
 ## 7. 前端与质量门禁
 
-前端采用 **Alpine.js 单文件静态页**（声明式绑定，零构建链、零 Node 依赖），UI 为三个交互：登录表单、签到与二维码展示、间隔设置。`/api` + `/ws` 协议已结构化，未来 UI 复杂化可无损迁移 React。
+前端采用 **Alpine.js 单文件静态页**（声明式绑定，零构建链、零 Node 依赖），UI 交互包括：登录表单、二维码展示、开始/停止轮询、普通/GPS 签到结果提示框、轮询间隔与 GPS 坐标设置。`/api` + `/ws` 协议已结构化，未来 UI 复杂化可无损迁移 React。
 
 质量门禁分层：
 
@@ -178,8 +214,10 @@ flowchart LR
 | `FAYE_HEARTBEAT_MS` | `5000` | faye WS 心跳（依赖 advice timeout 15s） |
 | `RECONNECT_BACKOFF_MAX_MS` | `30000` | faye 断线重连退避上限 |
 | `WS_PING_MS` | `30000` | 浏览器侧 WS 保活 ping |
+| `SIGN_DELAY_MS` | `5000` | 普通 / GPS 签到提交前的基准延迟（0 = 立即），另加 0–1000ms 抖动 |
 
 间隔数据流：客户端 localStorage（永久）→ WS 上报 → 服务端 `watch` 通道 → Poller 下轮读取 → `max(MIN_POLL_INTERVAL_MS)` 钳制。
+坐标数据流：客户端 localStorage（永久）→ WS `location` → 服务端连接级 `watch` → Poller 提交时读取；不落盘、不写日志。
 
 ## 10. 端到端时序（最优路径）
 
@@ -217,3 +255,7 @@ sequenceDiagram
 | 频道不鉴权属服务端宽松行为 | 不作为功能依赖，核心路径仅使用自己 active_signs 中发现的签到 |
 | openid 明文存 cookie | 2h 短时效 + HTTPS 传输；不做服务端会话，泄露面与官方网页端一致 |
 | 客户端上报超低间隔 | 服务端按 `.env` 边界钳制，不可突破 |
+| 自动签到触发风控 / 排名过于靠前 | `SIGN_DELAY_MS` 默认 5s + 抖动；每签到只提交一次；网络失败最多 3 轮 |
+| 签到后 `active_signs` 仍返回同一签到 | Poller 本地 `HashSet` 去重；多标签页重复由上游 305 幂等兜底 |
+| GPS 坐标偏差 / 有范围限制 | 坐标由用户填写（GCJ-02）；失败原因回显；不静默重试 |
+| 坐标隐私 | 仅存浏览器 localStorage 与连接级内存；不落盘、不写日志 |
