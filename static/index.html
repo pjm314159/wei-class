@@ -266,6 +266,125 @@
         font-size: 12.5px;
       }
 
+      .sign-log {
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px dashed var(--border);
+      }
+
+      .sign-log .hint {
+        margin: 4px 0 0;
+      }
+
+      /* 轮询开关：与状态胶囊同一行 */
+      .qr-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        white-space: nowrap;
+      }
+
+      .qr-actions .btn {
+        margin-top: 0;
+        padding: 6px 12px;
+      }
+
+      /* 签到结果提示框 */
+      .toast-wrap {
+        position: fixed;
+        top: 18px;
+        left: 50%;
+        z-index: 60;
+        width: min(440px, calc(100vw - 32px));
+        transform: translateX(-50%);
+        pointer-events: none;
+      }
+
+      .toast {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 14px 16px;
+        border: 1px solid var(--border);
+        border-left-width: 4px;
+        border-radius: 14px;
+        background: var(--surface);
+        box-shadow: var(--shadow-md);
+        pointer-events: auto;
+        animation: toast-in 0.22s ease-out;
+      }
+
+      .toast-ok {
+        border-left-color: var(--ok);
+      }
+
+      .toast-err {
+        border-left-color: var(--danger);
+      }
+
+      .toast-icon {
+        display: grid;
+        flex: none;
+        place-items: center;
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .toast-ok .toast-icon {
+        background: var(--ok-soft);
+        color: var(--ok);
+      }
+
+      .toast-err .toast-icon {
+        background: var(--danger-soft);
+        color: var(--danger);
+      }
+
+      .toast-body {
+        min-width: 0;
+      }
+
+      .toast-title {
+        font-size: 14px;
+        font-weight: 650;
+      }
+
+      .toast-detail {
+        margin-top: 2px;
+        color: var(--muted);
+        font-size: 12.5px;
+        overflow-wrap: anywhere;
+      }
+
+      .toast-close {
+        margin-left: auto;
+        padding: 0 2px;
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        font-size: 18px;
+        line-height: 1;
+        cursor: pointer;
+      }
+
+      .toast-close:hover {
+        color: var(--text);
+      }
+
+      @keyframes toast-in {
+        from {
+          opacity: 0;
+          transform: translateY(-8px) scale(0.98);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+
       .alert {
         margin: 12px 0 0;
         padding: 10px 12px;
@@ -314,6 +433,11 @@
         border-radius: 50%;
         background: currentColor;
         animation: breathe 1.8s ease-in-out infinite;
+      }
+
+      .pill.idle .dot {
+        animation: none;
+        opacity: 0.55;
       }
 
       @keyframes breathe {
@@ -610,11 +734,19 @@
       <main class="stack" x-show="loggedIn">
         <section class="card">
           <div class="qr-top">
-            <span class="pill" :class="statusTone">
+            <span class="pill" :class="[statusTone, polling ? '' : 'idle']">
               <i class="dot"></i>
               <span x-text="statusText"></span>
             </span>
-            <span class="meta" x-text="limitText"></span>
+            <div class="qr-actions">
+              <span class="meta" x-text="limitText"></span>
+              <button
+                class="btn btn-ghost btn-sm"
+                type="button"
+                @click="togglePolling()"
+                x-text="polling ? '停止轮询' : '开始轮询'"
+              ></button>
+            </div>
           </div>
 
           <template x-if="showQrArea">
@@ -672,10 +804,62 @@
           </div>
           <p class="hint" x-show="intervalHint" x-text="intervalHint"></p>
           <p class="hint" x-show="!intervalHint" x-text="intervalMessage"></p>
+
+          <div class="divider"></div>
+
+          <h3>普通 / 定位签到</h3>
+          <p class="hint">登录后自动提交，无需手动操作；坐标只保存在本机。</p>
+          <div class="row">
+            <label class="field">
+              <span class="field-label">经度</span>
+              <input
+                type="number"
+                min="-180"
+                max="180"
+                step="0.000001"
+                x-model.number="lonInput"
+                x-ref="lonInput"
+              />
+            </label>
+            <label class="field">
+              <span class="field-label">纬度</span>
+              <input
+                type="number"
+                min="-90"
+                max="90"
+                step="0.000001"
+                x-model.number="latInput"
+                x-ref="latInput"
+              />
+            </label>
+            <button class="btn btn-secondary" type="button" @click="saveLocation()">保存</button>
+          </div>
+          <p class="hint" x-show="locationHint" x-text="locationHint"></p>
+          <p class="hint" x-show="signNotice" x-text="signNotice"></p>
+          <div class="sign-log" x-show="signResults.length">
+            <template x-for="item in signResults" :key="item.key">
+              <p class="hint" x-text="item.text"></p>
+            </template>
+          </div>
         </section>
       </main>
 
       <footer class="footer">微助教签到助手 · 零持久化，openid 不落盘</footer>
+    </div>
+
+    <div class="toast-wrap" aria-live="polite" aria-atomic="true">
+      <template x-if="toast">
+        <div class="toast" :class="toast.tone === 'ok' ? 'toast-ok' : 'toast-err'" role="status">
+          <span class="toast-icon" x-text="toast.tone === 'ok' ? '✓' : '!'"></span>
+          <div class="toast-body">
+            <div class="toast-title" x-text="toast.title"></div>
+            <div class="toast-detail" x-text="toast.detail"></div>
+          </div>
+          <button class="toast-close" type="button" aria-label="关闭提示" @click="dismissToast()">
+            ×
+          </button>
+        </div>
+      </template>
     </div>
 
     <script>
@@ -698,6 +882,9 @@
           redirecting: "",
           closed: false,
           congested: false,
+          polling: true,
+          toast: null,
+          toastTimer: null,
           // 设置
           dark: false,
           autoRedirect: true,
@@ -705,6 +892,12 @@
           minIntervalMs: 0,
           intervalHint: "",
           requestedSeconds: 0,
+          // GPS / 自动签到
+          lonInput: "",
+          latInput: "",
+          locationHint: "",
+          signNotice: "",
+          signResults: [],
 
           init() {
             this.initTheme();
@@ -712,6 +905,13 @@
             if (Number.isFinite(saved) && saved >= 1) {
               this.intervalInput = Math.floor(saved);
             }
+            const savedLocation = readLocation();
+            if (savedLocation) {
+              this.lonInput = savedLocation.lon;
+              this.latInput = savedLocation.lat;
+              this.locationHint = "坐标已保存（仅本机）";
+            }
+            this.polling = localStorage.getItem("wei-class:polling") !== "false";
             this.autoRedirect = readCookie("auto_redirect") !== "false";
             const openid = readCookie("openid");
             if (openid) {
@@ -729,19 +929,22 @@
           },
 
           get statusTone() {
-            if (this.congested) return "";
             if (this.connection === "down") return "err";
-            if (this.qr && !this.closed) return "ok";
+            if (!this.polling) return "";
+            if (this.congested || this.closed) return "";
+            if (this.qr) return "ok";
+            if (this.connection === "live") return "ok";
             return "";
           },
 
           get statusText() {
             if (this.redirecting === "go") return "验证成功，正在跳转";
+            if (this.connection === "down") return "连接已断开";
+            if (this.connection === "connecting") return "连接中…";
+            if (!this.polling) return "轮询已停止";
             if (this.closed) return "本轮签到已关闭";
             if (this.congested) return "前方拥挤，请稍候重试";
             if (this.qr) return "签到已就绪，请扫码";
-            if (this.connection === "connecting") return "连接中…";
-            if (this.connection === "down") return "连接已断开";
             return "正在监听";
           },
 
@@ -750,6 +953,7 @@
             if (this.connection === "down") return "连接已断开，3 秒后自动重试";
             if (this.closed) return "本轮签到已关闭，等待下一次开启";
             if (this.congested) return "前方拥挤，请稍候";
+            if (!this.polling) return "轮询已停止，点击「开始轮询」继续";
             return "等待教师开启签到…";
           },
 
@@ -825,6 +1029,8 @@
               const seconds = Math.max(1, Math.floor(this.intervalInput));
               this.requestedSeconds = seconds;
               this.send({ type: "interval", seconds });
+              this.sendSavedLocation();
+              this.send({ type: "polling", enabled: this.polling });
             });
             socket.addEventListener("message", (event) => {
               const message = parseMessage(event.data);
@@ -846,6 +1052,10 @@
               case "status":
                 this.applyStatus(message.intervalMs, message.minIntervalMs);
                 break;
+              case "polling":
+                this.polling = Boolean(message.enabled);
+                localStorage.setItem("wei-class:polling", String(this.polling));
+                break;
               case "qr":
                 this.handleQr(message.url);
                 break;
@@ -857,6 +1067,13 @@
                 break;
               case "congested":
                 this.congested = true;
+                break;
+              case "locationRequired":
+                this.signNotice = `检测到定位签到「${message.name || "未命名"}」，请填写坐标`;
+                this.$nextTick(() => this.$refs.lonInput?.focus());
+                break;
+              case "signResult":
+                this.addSignResult(message);
                 break;
               case "sessionExpired":
                 this.onExpired();
@@ -911,6 +1128,69 @@
             this.send({ type: "interval", seconds });
           },
 
+          togglePolling() {
+            this.polling = !this.polling;
+            localStorage.setItem("wei-class:polling", String(this.polling));
+            this.send({ type: "polling", enabled: this.polling });
+          },
+
+          saveLocation() {
+            const lon = Number(this.lonInput);
+            const lat = Number(this.latInput);
+            if (!isFilledLocation(this.lonInput, this.latInput, lon, lat)) {
+              this.locationHint = "经纬度不合法，请检查范围";
+              return;
+            }
+            localStorage.setItem("wei-class:location", JSON.stringify({ lon, lat }));
+            this.locationHint = "坐标已保存，本轮生效";
+            this.send({ type: "location", lon, lat });
+          },
+
+          sendSavedLocation() {
+            const lon = Number(this.lonInput);
+            const lat = Number(this.latInput);
+            if (!isFilledLocation(this.lonInput, this.latInput, lon, lat)) return;
+            this.send({ type: "location", lon, lat });
+          },
+
+          addSignResult(message) {
+            const mode = message.mode === "gps" ? "定位签到" : "普通签到";
+            const name = message.name || "未命名";
+            const reason = message.reason ? `（${message.reason}）` : "";
+            let text;
+            if (message.status === "ok") {
+              text = `${mode}成功：${name}`;
+              this.showToast("ok", "签到成功", `${name} · ${mode}`);
+            } else if (message.status === "already") {
+              text = `${mode}已签到：${name}`;
+              this.showToast("ok", "已签到", `${name} · ${mode}`);
+            } else {
+              text = `${mode}失败：${name}${reason}`;
+              this.showToast("err", "签到失败", `${name}：${message.reason || "请稍后重试"}`);
+            }
+            this.signNotice = message.status === "failed" ? text : "";
+            const at = new Date().toLocaleTimeString();
+            this.signResults = [
+              { key: `${message.signId}-${Date.now()}`, text: `${at} ${text}` },
+              ...this.signResults,
+            ].slice(0, 5);
+          },
+
+          showToast(tone, title, detail) {
+            this.toast = { tone, title, detail };
+            if (this.toastTimer) clearTimeout(this.toastTimer);
+            this.toastTimer = setTimeout(() => {
+              this.toast = null;
+              this.toastTimer = null;
+            }, 4500);
+          },
+
+          dismissToast() {
+            if (this.toastTimer) clearTimeout(this.toastTimer);
+            this.toastTimer = null;
+            this.toast = null;
+          },
+
           send(message) {
             if (this.socket && this.socket.readyState === WebSocket.OPEN) {
               this.socket.send(JSON.stringify(message));
@@ -937,6 +1217,9 @@
             this.qr = null;
             this.currentQrUrl = "";
             this.redirecting = "";
+            this.signResults = [];
+            this.signNotice = "";
+            this.dismissToast();
             this.loginError = "登录已失效，请重新输入 openid";
             clearCookie("openid");
             this.loggedIn = false;
@@ -956,6 +1239,9 @@
             this.congested = false;
             this.closed = false;
             this.intervalHint = "";
+            this.signResults = [];
+            this.signNotice = "";
+            this.dismissToast();
             this.closeSocket();
           },
 
@@ -980,6 +1266,33 @@
           if (key === name) return rest.join("=");
         }
         return "";
+      }
+
+      function readLocation() {
+        const raw = localStorage.getItem("wei-class:location");
+        if (!raw) return null;
+        try {
+          const value = JSON.parse(raw);
+          if (Number.isFinite(value?.lon) && Number.isFinite(value?.lat)) {
+            return value;
+          }
+        } catch {
+          return null;
+        }
+        return null;
+      }
+
+      function isFilledLocation(lonInput, latInput, lon, lat) {
+        return (
+          String(lonInput) !== "" &&
+          String(latInput) !== "" &&
+          Number.isFinite(lon) &&
+          Number.isFinite(lat) &&
+          lon >= -180 &&
+          lon <= 180 &&
+          lat >= -90 &&
+          lat <= 90
+        );
       }
 
       function setCookie(name, value, days) {
