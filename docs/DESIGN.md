@@ -155,6 +155,7 @@ loop {
 - **普通 / GPS 自动提交**（2026-11-20 产品决策）：常开，无前端关闭入口；普通签到只提交 `courseId/signId`，GPS 追加坐标。
 - **GPS 坐标**：浏览器通过 `WS ↑ {type:"location", lon, lat}` 上报，存在连接级 `watch` 中。未配置时先尝试无坐标提交（无范围限制的签到可成功）；业务失败后再下发 `locationRequired`，用户补坐标后重试。
 - **坐标热更新**：坐标变化会把 `force_poll` 置位，跳过当前 sleep（即使处于二维码暂停期）立即查询一轮；完成后若订阅表仍非空，恢复暂停。
+- **手动轮询开关**（2026-11-20）：前端按钮通过 `WS ↑ {type:"polling", enabled}` 控制；`false` 时 Poller 停止查询并等待，`true` 时置 `force_poll` 立即查询一轮。已订阅的二维码推送不受影响。
 - **去重**：Poller 维护 `HashSet<(courseId, signId)>`（成功 / 已签到 / 终结失败），不依赖 `active_signs` 列表消失（实测签到后仍会返回）。
 - **重试**：网络错误最多 3 轮；业务错误不重试。提交前有 `SIGN_DELAY_MS` 延迟（默认 5s）与抖动，避免签到排名过于靠前。
 - 轮询间隔**以轮为单位读取**：客户端改值最迟在当前 sleep 结束后生效——即热更新。
@@ -167,14 +168,15 @@ loop {
 |------|------|------|
 | `GET /` | HTTP | 静态页（单文件 HTML + Alpine.js） |
 | `POST /api/login` | HTTP | body `{openid}` → 校验一次 `active_signs` → 签发 2h cookie；失败返回原因 |
-| `WS /ws` | WS | 建立即会话开始；服务端推 `Qr` / `Closed` / `Congested` / `SessionExpired` / `Status` / `LocationRequired` / `SignResult` |
+| `WS /ws` | WS | 建立即会话开始；服务端推 `Qr` / `Closed` / `Congested` / `SessionExpired` / `Status` / `Polling` / `LocationRequired` / `SignResult` |
 | `WS ↑ {type:"interval", seconds}` | WS | 客户端指定轮询间隔（任意时刻可改发，热更新；服务端按 `.env` 边界钳制） |
 | `WS ↑ {type:"location", lon, lat}` | WS | 客户端上报 GPS 坐标（GCJ-02）；存在连接级内存，不落盘 |
+| `WS ↑ {type:"polling", enabled}` | WS | 手动开始 / 停止签到轮询；服务端回 `Polling` 确认 |
 | 保活 | WS | 服务端每 30s 发 ping 帧，防反代/浏览器空闲断开 |
 
 ## 7. 前端与质量门禁
 
-前端采用 **Alpine.js 单文件静态页**（声明式绑定，零构建链、零 Node 依赖），UI 交互包括：登录表单、二维码展示、普通/GPS 签到结果、轮询间隔与 GPS 坐标设置。`/api` + `/ws` 协议已结构化，未来 UI 复杂化可无损迁移 React。
+前端采用 **Alpine.js 单文件静态页**（声明式绑定，零构建链、零 Node 依赖），UI 交互包括：登录表单、二维码展示、开始/停止轮询、普通/GPS 签到结果提示框、轮询间隔与 GPS 坐标设置。`/api` + `/ws` 协议已结构化，未来 UI 复杂化可无损迁移 React。
 
 质量门禁分层：
 
