@@ -435,6 +435,11 @@
         animation: breathe 1.8s ease-in-out infinite;
       }
 
+      .pill.idle .dot {
+        animation: none;
+        opacity: 0.55;
+      }
+
       @keyframes breathe {
         0%,
         100% {
@@ -729,7 +734,7 @@
       <main class="stack" x-show="loggedIn">
         <section class="card">
           <div class="qr-top">
-            <span class="pill" :class="statusTone">
+            <span class="pill" :class="[statusTone, polling ? '' : 'idle']">
               <i class="dot"></i>
               <span x-text="statusText"></span>
             </span>
@@ -924,20 +929,22 @@
           },
 
           get statusTone() {
-            if (this.congested) return "";
             if (this.connection === "down") return "err";
-            if (this.qr && !this.closed) return "ok";
+            if (!this.polling) return "";
+            if (this.congested || this.closed) return "";
+            if (this.qr) return "ok";
+            if (this.connection === "live") return "ok";
             return "";
           },
 
           get statusText() {
             if (this.redirecting === "go") return "验证成功，正在跳转";
+            if (this.connection === "down") return "连接已断开";
+            if (this.connection === "connecting") return "连接中…";
+            if (!this.polling) return "轮询已停止";
             if (this.closed) return "本轮签到已关闭";
             if (this.congested) return "前方拥挤，请稍候重试";
             if (this.qr) return "签到已就绪，请扫码";
-            if (this.connection === "connecting") return "连接中…";
-            if (this.connection === "down") return "连接已断开";
-            if (!this.polling) return "轮询已停止";
             return "正在监听";
           },
 
