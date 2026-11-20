@@ -276,6 +276,143 @@
         margin: 4px 0 0;
       }
 
+      /* 轮询开关 */
+      .poll-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 14px;
+        padding-top: 14px;
+        border-top: 1px dashed var(--border);
+      }
+
+      .poll-state {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--ok);
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .poll-state.off {
+        color: var(--warn);
+      }
+
+      .poll-state .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: currentColor;
+        animation: breathe 1.8s ease-in-out infinite;
+      }
+
+      .poll-state.off .dot {
+        animation: none;
+        opacity: 0.7;
+      }
+
+      .poll-row .btn {
+        margin-top: 0;
+      }
+
+      /* 签到结果提示框 */
+      .toast-wrap {
+        position: fixed;
+        top: 18px;
+        left: 50%;
+        z-index: 60;
+        width: min(440px, calc(100vw - 32px));
+        transform: translateX(-50%);
+        pointer-events: none;
+      }
+
+      .toast {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 14px 16px;
+        border: 1px solid var(--border);
+        border-left-width: 4px;
+        border-radius: 14px;
+        background: var(--surface);
+        box-shadow: var(--shadow-md);
+        pointer-events: auto;
+        animation: toast-in 0.22s ease-out;
+      }
+
+      .toast-ok {
+        border-left-color: var(--ok);
+      }
+
+      .toast-err {
+        border-left-color: var(--danger);
+      }
+
+      .toast-icon {
+        display: grid;
+        flex: none;
+        place-items: center;
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .toast-ok .toast-icon {
+        background: var(--ok-soft);
+        color: var(--ok);
+      }
+
+      .toast-err .toast-icon {
+        background: var(--danger-soft);
+        color: var(--danger);
+      }
+
+      .toast-body {
+        min-width: 0;
+      }
+
+      .toast-title {
+        font-size: 14px;
+        font-weight: 650;
+      }
+
+      .toast-detail {
+        margin-top: 2px;
+        color: var(--muted);
+        font-size: 12.5px;
+        overflow-wrap: anywhere;
+      }
+
+      .toast-close {
+        margin-left: auto;
+        padding: 0 2px;
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        font-size: 18px;
+        line-height: 1;
+        cursor: pointer;
+      }
+
+      .toast-close:hover {
+        color: var(--text);
+      }
+
+      @keyframes toast-in {
+        from {
+          opacity: 0;
+          transform: translateY(-8px) scale(0.98);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+
       .alert {
         margin: 12px 0 0;
         padding: 10px 12px;
@@ -627,6 +764,19 @@
             <span class="meta" x-text="limitText"></span>
           </div>
 
+          <div class="poll-row">
+            <span class="poll-state" :class="polling ? 'on' : 'off'">
+              <i class="dot"></i>
+              <span x-text="polling ? '签到轮询中' : '签到轮询已停止'"></span>
+            </span>
+            <button
+              class="btn btn-ghost btn-sm"
+              type="button"
+              @click="togglePolling()"
+              x-text="polling ? '停止轮询' : '开始轮询'"
+            ></button>
+          </div>
+
           <template x-if="showQrArea">
             <div class="stage">
               <div class="qr-frame">
@@ -725,6 +875,21 @@
       <footer class="footer">微助教签到助手 · 零持久化，openid 不落盘</footer>
     </div>
 
+    <div class="toast-wrap" aria-live="polite" aria-atomic="true">
+      <template x-if="toast">
+        <div class="toast" :class="toast.tone === 'ok' ? 'toast-ok' : 'toast-err'" role="status">
+          <span class="toast-icon" x-text="toast.tone === 'ok' ? '✓' : '!'"></span>
+          <div class="toast-body">
+            <div class="toast-title" x-text="toast.title"></div>
+            <div class="toast-detail" x-text="toast.detail"></div>
+          </div>
+          <button class="toast-close" type="button" aria-label="关闭提示" @click="dismissToast()">
+            ×
+          </button>
+        </div>
+      </template>
+    </div>
+
     <script>
       document.addEventListener("alpine:init", () => {
         Alpine.data("app", () => ({
@@ -745,6 +910,9 @@
           redirecting: "",
           closed: false,
           congested: false,
+          polling: true,
+          toast: null,
+          toastTimer: null,
           // 设置
           dark: false,
           autoRedirect: true,
@@ -771,6 +939,7 @@
               this.latInput = savedLocation.lat;
               this.locationHint = "坐标已保存（仅本机）";
             }
+            this.polling = localStorage.getItem("wei-class:polling") !== "false";
             this.autoRedirect = readCookie("auto_redirect") !== "false";
             const openid = readCookie("openid");
             if (openid) {
@@ -801,6 +970,7 @@
             if (this.qr) return "签到已就绪，请扫码";
             if (this.connection === "connecting") return "连接中…";
             if (this.connection === "down") return "连接已断开";
+            if (!this.polling) return "轮询已停止";
             return "正在监听";
           },
 
@@ -809,6 +979,7 @@
             if (this.connection === "down") return "连接已断开，3 秒后自动重试";
             if (this.closed) return "本轮签到已关闭，等待下一次开启";
             if (this.congested) return "前方拥挤，请稍候";
+            if (!this.polling) return "轮询已停止，点击「开始轮询」继续";
             return "等待教师开启签到…";
           },
 
@@ -885,6 +1056,7 @@
               this.requestedSeconds = seconds;
               this.send({ type: "interval", seconds });
               this.sendSavedLocation();
+              this.send({ type: "polling", enabled: this.polling });
             });
             socket.addEventListener("message", (event) => {
               const message = parseMessage(event.data);
@@ -905,6 +1077,10 @@
             switch (message.type) {
               case "status":
                 this.applyStatus(message.intervalMs, message.minIntervalMs);
+                break;
+              case "polling":
+                this.polling = Boolean(message.enabled);
+                localStorage.setItem("wei-class:polling", String(this.polling));
                 break;
               case "qr":
                 this.handleQr(message.url);
@@ -978,6 +1154,12 @@
             this.send({ type: "interval", seconds });
           },
 
+          togglePolling() {
+            this.polling = !this.polling;
+            localStorage.setItem("wei-class:polling", String(this.polling));
+            this.send({ type: "polling", enabled: this.polling });
+          },
+
           saveLocation() {
             const lon = Number(this.lonInput);
             const lat = Number(this.latInput);
@@ -1000,14 +1182,17 @@
           addSignResult(message) {
             const mode = message.mode === "gps" ? "定位签到" : "普通签到";
             const name = message.name || "未命名";
+            const reason = message.reason ? `（${message.reason}）` : "";
             let text;
             if (message.status === "ok") {
               text = `${mode}成功：${name}`;
+              this.showToast("ok", "签到成功", `${name} · ${mode}`);
             } else if (message.status === "already") {
               text = `${mode}已签到：${name}`;
+              this.showToast("ok", "已签到", `${name} · ${mode}`);
             } else {
-              const reason = message.reason ? `（${message.reason}）` : "";
               text = `${mode}失败：${name}${reason}`;
+              this.showToast("err", "签到失败", `${name}：${message.reason || "请稍后重试"}`);
             }
             this.signNotice = message.status === "failed" ? text : "";
             const at = new Date().toLocaleTimeString();
@@ -1015,6 +1200,21 @@
               { key: `${message.signId}-${Date.now()}`, text: `${at} ${text}` },
               ...this.signResults,
             ].slice(0, 5);
+          },
+
+          showToast(tone, title, detail) {
+            this.toast = { tone, title, detail };
+            if (this.toastTimer) clearTimeout(this.toastTimer);
+            this.toastTimer = setTimeout(() => {
+              this.toast = null;
+              this.toastTimer = null;
+            }, 4500);
+          },
+
+          dismissToast() {
+            if (this.toastTimer) clearTimeout(this.toastTimer);
+            this.toastTimer = null;
+            this.toast = null;
           },
 
           send(message) {
@@ -1045,6 +1245,7 @@
             this.redirecting = "";
             this.signResults = [];
             this.signNotice = "";
+            this.dismissToast();
             this.loginError = "登录已失效，请重新输入 openid";
             clearCookie("openid");
             this.loggedIn = false;
@@ -1066,6 +1267,7 @@
             this.intervalHint = "";
             this.signResults = [];
             this.signNotice = "";
+            this.dismissToast();
             this.closeSocket();
           },
 
